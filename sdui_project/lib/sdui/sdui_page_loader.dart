@@ -28,25 +28,28 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
     _fetchPage();
   }
 
-  Future<void> _fetchPage() async {
+  Future<void> _fetchPage({bool useCache = true}) async {
     try {
-      final json = await SDUIApiService.fetchEndpoint(widget.endpoint);
-
-      if (mounted) {
-        setState(() {
-          uiData = json;
-          isLoading = false;
-        });
-      }
+      final json = await SDUIApiService.fetchEndpoint(
+        widget.endpoint,
+        useCache: useCache,
+      );
+      if (!mounted) return;
+      setState(() {
+        uiData = json;
+        errorMessage = null;
+        isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          errorMessage = e.toString();
-          isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        errorMessage = e.toString();
+        isLoading = false;
+      });
     }
   }
+
+  Future<void> _refresh() => _fetchPage(useCache: false);
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +60,19 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
     if (errorMessage != null || uiData == null) {
       return Scaffold(
         appBar: AppBar(title: const Text("Error")),
-        body: Center(child: Text("Failed to load: $errorMessage")),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Failed to load: $errorMessage"),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: _refresh,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -69,7 +84,13 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: SafeArea(
-        child: SingleChildScrollView(child: SDUIParser(uiJson: tree)),
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: SDUIParser(uiJson: tree),
+          ),
+        ),
       ),
     );
   }
@@ -83,12 +104,17 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
 
 /// Fetches SDUI screen JSON from the Dart Frog server.
 class SDUIApiService {
-  /// Base URL of the sdui_server. Android emulator needs 10.0.2.2 to reach
-  /// the host machine; iOS simulator, desktop and web can use localhost.
+  /// Override at build/run time:
+  ///   flutter run --dart-define=SDUI_BASE_URL=https://sdui.example.com
+  static const String _override = String.fromEnvironment('SDUI_BASE_URL');
+
+  /// Base URL of the sdui_server. Resolution order:
+  /// 1. `--dart-define=SDUI_BASE_URL=...` if set
+  /// 2. Android emulator → `http://10.0.2.2:8080` (host loopback)
+  /// 3. Everything else (iOS sim, desktop, web) → `http://localhost:8080`
   static String get baseUrl {
-    if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:8080';
-    }
+    if (_override.isNotEmpty) return _override;
+    if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:8080';
     return 'http://localhost:8080';
   }
 
@@ -99,27 +125,46 @@ class SDUIApiService {
     String endpoint, {
     bool useCache = true,
   }) async {
-    final normalized = endpoint.startsWith('/') ? endpoint : '/$endpoint';
+    final uri = _resolve(endpoint);
+    final cacheKey = uri.path + (uri.hasQuery ? '?${uri.query}' : '');
 
-    if (useCache && _cache.containsKey(normalized)) {
-      return Map<String, dynamic>.from(_cache[normalized]!);
+    if (useCache && _cache.containsKey(cacheKey)) {
+      return Map<String, dynamic>.from(_cache[cacheKey]!);
     }
 
-    final uri = Uri.parse('$baseUrl$normalized');
     final response = await http.get(uri);
+    final data = _decode(response, uri);
+    if (useCache) _cache[cacheKey] = data;
+    return data;
+  }
 
+  /// POSTs a JSON body and returns the JSON response. Used by form submits.
+  static Future<Map<String, dynamic>> postJson(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final uri = _resolve(endpoint);
+    final response = await http.post(
+      uri,
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    return _decode(response, uri);
+  }
+
+  static Uri _resolve(String endpoint) {
+    final normalized = endpoint.startsWith('/') ? endpoint : '/$endpoint';
+    return Uri.parse('$baseUrl$normalized');
+  }
+
+  static Map<String, dynamic> _decode(http.Response response, Uri uri) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-        'SDUI fetch failed (${response.statusCode}) for $uri',
-      );
+      throw Exception('SDUI request failed (${response.statusCode}) for $uri');
     }
-
     final decoded = jsonDecode(response.body);
     if (decoded is! Map) {
       throw Exception('SDUI response is not a JSON object for $uri');
     }
-    final data = Map<String, dynamic>.from(decoded);
-    if (useCache) _cache[normalized] = data;
-    return data;
+    return Map<String, dynamic>.from(decoded);
   }
 }

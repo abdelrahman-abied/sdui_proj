@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:sdui_project/sdui/sdui_parser.dart';
 
+import '../sdui/sdui_parser.dart';
 import '../utils/style_parser.dart';
 
 class SDUIContainer extends StatelessWidget {
@@ -10,24 +10,30 @@ class SDUIContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Map<String, dynamic>.from(uiJson['style'] as Map? ?? {});
-    final List<dynamic> children = uiJson['children'] ?? [];
+    final props = Map<String, dynamic>.from(uiJson['props'] as Map? ?? {});
+    final children = (uiJson['children'] as List? ?? []);
+
+    final radius = StyleParser.parseCornerRadius(props);
+    final decoration = BoxDecoration(
+      color: StyleParser.parseBackgroundColor(props),
+      borderRadius: radius > 0 ? BorderRadius.circular(radius) : null,
+    );
+
+    final body = children.length == 1
+        ? SDUIParser(uiJson: Map<String, dynamic>.from(children.first as Map))
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children
+                .map((c) => SDUIParser(uiJson: Map<String, dynamic>.from(c as Map)))
+                .toList(),
+          );
 
     return Padding(
-      padding: StyleParser.parseInsets(style, 'margin'),
+      padding: StyleParser.parseMargin(props),
       child: Container(
-        decoration: StyleParser.parseDecoration(style),
-        padding: StyleParser.parseInsets(style, 'padding'),
-
-        // --- FIX IS HERE ---
-        child: children.length == 1
-            ? SDUIParser(uiJson: Map<String, dynamic>.from(children[0] as Map))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children
-                    .map((c) => SDUIParser(uiJson: Map<String, dynamic>.from(c as Map)))
-                    .toList(),
-              ),
+        padding: StyleParser.parsePadding(props),
+        decoration: decoration,
+        child: body,
       ),
     );
   }

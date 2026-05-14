@@ -95,10 +95,13 @@ class InputText extends SDUIWidget {
 
 class LazyList extends SDUIWidget {
   LazyList({
-    required String nextUrl,
+    String? nextUrl,
     super.children,
     super.action,
-  }) : super(type: 'LAZY_LIST', props: {'nextUrl': nextUrl});
+  }) : super(
+          type: 'LAZY_LIST',
+          props: {if (nextUrl != null) 'nextUrl': nextUrl},
+        );
 }
 
 class SDUIContainer extends SDUIWidget {

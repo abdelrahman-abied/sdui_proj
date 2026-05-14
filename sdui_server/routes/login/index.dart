@@ -33,8 +33,6 @@ Response onRequest(RequestContext context) {
             action: sduiAction(
               type: 'form_submit',
               url: '/auth/login',
-              successUrl: '/home',
-              successMessage: 'Login successful',
             ),
           ),
         ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sdui_project/sdui/form_manager.dart';
+import 'package:sdui_project/sdui/sdui_page_loader.dart';
 
 import 'sdui_action.dart';
 
@@ -69,40 +70,63 @@ class SDUIActionDelegate {
   }
 
   static void _handleFormSubmit(BuildContext context, SDUIAction action) async {
-    debugPrint("[FormSubmit] Sign In tapped - validating form");
     final manager = SDUIFormManager();
 
-    // 1. Validate Client-Side - show errors on fields (not toast)
+    // 1. Client-side validation — surface errors inline on fields.
     final errors = manager.validate();
     if (errors != null) {
       manager.fieldErrors.value = errors;
       return;
     }
 
-    // 2. Merge form data with action.data (e.g. device_id)
-    final body = Map<String, dynamic>.from(manager.export());
-    if (action.payload != null) {
-      body.addAll(Map<String, dynamic>.from(action.payload!));
+    final url = action.url;
+    if (url == null || url.isEmpty) {
+      debugPrint('[FormSubmit] missing url on action');
+      return;
     }
 
-    debugPrint("Form submit to ${action.url}: $body");
+    // 2. Merge field values with any static data the action carries.
+    final body = <String, dynamic>{
+      ...manager.export(),
+      if (action.payload != null) ...action.payload!,
+    };
 
-    // 3. Mock API call
-    await Future.delayed(const Duration(seconds: 1));
+    Map<String, dynamic> reply;
+    try {
+      reply = await SDUIApiService.postJson(url, body);
+    } catch (e) {
+      debugPrint('[FormSubmit] POST $url failed: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Submit failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (!context.mounted) return;
 
-    // 4. Success: navigate from JSON if provided
-    manager.clear();
-    final route = action.successUrl;
-    if (route != null && route.isNotEmpty) {
-      Navigator.of(context).pushNamedAndRemoveUntil(route, (r) => false);
-    }
-    final message = action.successMessage;
+    final message = reply['message'] as String?;
     if (message != null && message.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
+    }
+
+    // 3. Run whatever follow-up action the server hands back. The server is
+    // the authority — on success it returns a `navigate` action, on failure
+    // a `show_toast` action.
+    final replyAction = reply['action'];
+    if (replyAction is Map) {
+      final next = SDUIAction.fromJson(Map<String, dynamic>.from(replyAction));
+      if (next.type == 'navigate' && next.url != null) {
+        manager.clear();
+        Navigator.of(context).pushNamedAndRemoveUntil(next.url!, (_) => false);
+      } else {
+        handleAction(context, next);
+      }
     }
   }
 }
