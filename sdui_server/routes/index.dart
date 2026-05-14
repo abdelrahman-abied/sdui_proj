@@ -1,12 +1,11 @@
 import 'package:dart_frog/dart_frog.dart';
+import 'package:sdui_server/auth.dart';
 
-/// App entrypoint. The server picks where the client should start.
-/// Today: send everyone to /login. Later this can branch on auth
-/// (e.g. read a session cookie and redirect to /home if signed in)
-/// without any client change.
+/// App entrypoint. The server picks where the client should start, based on
+/// the JWT the client attaches (if any). The global middleware has already
+/// validated the token by the time this handler runs.
 Response onRequest(RequestContext context) {
-  return Response(
-    statusCode: 302,
-    headers: {'location': '/login'},
-  );
+  final user = context.read<AuthUser>();
+  final target = user.isAnonymous ? '/login' : '/home';
+  return Response(statusCode: 302, headers: {'location': target});
 }
