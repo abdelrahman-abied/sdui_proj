@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Claude Code harness
+.claude/
+
+# Dart/Flutter build artifacts (subpackages also gitignore these)
+**/.dart_tool/
+**/build/
+**/.dart_frog/
+**/coverage/
