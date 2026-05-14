@@ -1,17 +1,26 @@
 /// Abstract base for all SDUI widgets.
 /// Server defines View via type, props, optional children, and optional action.
+///
+/// [fallbackType] / [fallbackProps] let the server ship a primary type that
+/// only newer clients understand, with a back-compat node older clients can
+/// render. The client parser uses them automatically when `type` has no
+/// registered builder.
 abstract class SDUIWidget {
   const SDUIWidget({
     required this.type,
     this.props = const {},
     this.children,
     this.action,
+    this.fallbackType,
+    this.fallbackProps,
   });
 
   final String type;
   final Map<String, dynamic> props;
   final List<SDUIWidget>? children;
   final Map<String, dynamic>? action;
+  final String? fallbackType;
+  final Map<String, dynamic>? fallbackProps;
 
   Map<String, dynamic> toJson() {
     return {
@@ -20,6 +29,8 @@ abstract class SDUIWidget {
       if (children != null && children!.isNotEmpty)
         'children': children!.map((c) => c.toJson()).toList(),
       if (action != null) 'action': action,
+      if (fallbackType != null) 'fallback_type': fallbackType,
+      if (fallbackProps != null) 'fallback_props': fallbackProps,
     };
   }
 }

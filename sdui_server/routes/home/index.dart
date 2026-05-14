@@ -1,16 +1,22 @@
 import 'package:dart_frog/dart_frog.dart';
+import 'package:sdui_server/auth.dart';
 import 'package:sdui_server/sdui_actions.dart';
 import 'package:sdui_server/sdui_builder.dart';
 
 Response onRequest(RequestContext context) {
+  final user = context.read<AuthUser>();
   final dashboard = VerticalStack(
     children: [
-      // Header
+      // Header — greets the signed-in user
       SDUIContainer(
         backgroundColor: '#1a1a2e',
         padding: 16,
         children: [
-          SDUIText(text: 'Dashboard', style: 'title', color: '#ffffff'),
+          SDUIText(
+            text: 'Welcome, ${user.username}',
+            style: 'title',
+            color: '#ffffff',
+          ),
         ],
       ),
       // Banner
@@ -40,6 +46,10 @@ Response onRequest(RequestContext context) {
           ButtonPrimary(
             label: 'Browse Feed',
             action: sduiAction(type: 'navigate', url: '/feed'),
+          ),
+          ButtonPrimary(
+            label: 'Sign Out',
+            action: sduiAction(type: 'logout', url: '/login'),
           ),
         ],
       ),

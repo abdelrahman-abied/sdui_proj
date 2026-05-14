@@ -5,10 +5,18 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'action_delegate.dart';
+import 'sdui_action.dart';
 import 'sdui_parser.dart';
+import 'session_store.dart';
+
+/// SDUI schema version this client speaks. Sent on every request as
+/// `X-SDUI-Version`. The server can reject older clients with 426 or
+/// respond with `X-SDUI-Deprecated` to nudge an upgrade.
+const int sduiSchemaVersion = 1;
 
 class SDUIGenericPage extends StatefulWidget {
-  final String endpoint; // e.g., "home" or "product/123"
+  final String endpoint;
   final Map<String, dynamic> initialData;
 
   const SDUIGenericPage({super.key, required this.endpoint, this.initialData = const {}});
@@ -40,6 +48,11 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
         errorMessage = null;
         isLoading = false;
       });
+    } on SDUIUnauthorizedException catch (e) {
+      // Server says we're not authenticated — dispatch its recovery action
+      // (typically navigate /login). The session has already been cleared.
+      if (!mounted) return;
+      SDUIActionDelegate.handleAction(context, e.action);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -59,12 +72,12 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
 
     if (errorMessage != null || uiData == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text("Error")),
+        appBar: AppBar(title: const Text('Error')),
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text("Failed to load: $errorMessage"),
+              Text('Failed to load: $errorMessage'),
               const SizedBox(height: 12),
               FilledButton.tonal(
                 onPressed: _refresh,
@@ -102,6 +115,15 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
   }
 }
 
+/// Thrown when the server returns 401. Carries the SDUI action the server
+/// wants the client to run (typically `navigate /login`).
+class SDUIUnauthorizedException implements Exception {
+  SDUIUnauthorizedException(this.action);
+  final SDUIAction action;
+  @override
+  String toString() => 'SDUIUnauthorizedException(${action.type} ${action.url})';
+}
+
 /// Fetches SDUI screen JSON from the Dart Frog server.
 class SDUIApiService {
   /// Override at build/run time:
@@ -118,8 +140,15 @@ class SDUIApiService {
     return 'http://localhost:8080';
   }
 
-  /// Optional in-memory cache to avoid re-fetching on repeated navigation.
+  /// In-memory cache for GET responses. Cleared on logout/401.
   static final Map<String, Map<String, dynamic>> _cache = {};
+
+  /// Server-emitted deprecation notice (X-SDUI-Deprecated). UI can listen to
+  /// this and show a banner. Set the first time we observe the header in a
+  /// response; left in place until the app restarts.
+  static final ValueNotifier<String?> deprecationNotice = ValueNotifier(null);
+
+  static void clearCache() => _cache.clear();
 
   static Future<Map<String, dynamic>> fetchEndpoint(
     String endpoint, {
@@ -132,8 +161,8 @@ class SDUIApiService {
       return Map<String, dynamic>.from(_cache[cacheKey]!);
     }
 
-    final response = await http.get(uri);
-    final data = _decode(response, uri);
+    final response = await http.get(uri, headers: await _headers());
+    final data = await _decode(response, uri);
     if (useCache) _cache[cacheKey] = data;
     return data;
   }
@@ -146,7 +175,7 @@ class SDUIApiService {
     final uri = _resolve(endpoint);
     final response = await http.post(
       uri,
-      headers: const {'content-type': 'application/json'},
+      headers: await _headers(),
       body: jsonEncode(body),
     );
     return _decode(response, uri);
@@ -157,14 +186,53 @@ class SDUIApiService {
     return Uri.parse('$baseUrl$normalized');
   }
 
-  static Map<String, dynamic> _decode(http.Response response, Uri uri) {
+  static Future<Map<String, String>> _headers() async {
+    final token = await SessionStore.getToken();
+    return {
+      'content-type': 'application/json',
+      'x-sdui-version': '$sduiSchemaVersion',
+      if (token != null && token.isNotEmpty) 'authorization': 'Bearer $token',
+    };
+  }
+
+  static Future<Map<String, dynamic>> _decode(http.Response response, Uri uri) async {
+    // Pick up any deprecation notice the server sent.
+    final deprecated = response.headers['x-sdui-deprecated'];
+    if (deprecated != null && deprecated.isNotEmpty) {
+      deprecationNotice.value = deprecated;
+    }
+
+    // 401: clear session, surface the server's recovery action.
+    if (response.statusCode == 401) {
+      await SessionStore.clear();
+      clearCache();
+      final body = _tryDecodeBody(response.body);
+      final actionJson = body?['action'];
+      if (actionJson is Map) {
+        throw SDUIUnauthorizedException(
+          SDUIAction.fromJson(Map<String, dynamic>.from(actionJson)),
+        );
+      }
+      throw SDUIUnauthorizedException(
+        SDUIAction(type: 'navigate', url: '/login'),
+      );
+    }
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('SDUI request failed (${response.statusCode}) for $uri');
     }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
+    final decoded = _tryDecodeBody(response.body);
+    if (decoded == null) {
       throw Exception('SDUI response is not a JSON object for $uri');
     }
-    return Map<String, dynamic>.from(decoded);
+    return decoded;
+  }
+
+  static Map<String, dynamic>? _tryDecodeBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
   }
 }

@@ -1,26 +1,94 @@
 import 'package:dart_frog/dart_frog.dart';
+import 'package:sdui_server/auth.dart';
+import 'package:sdui_server/sdui_actions.dart';
 
-/// Global middleware applied to every route.
-///
-/// Adds permissive CORS headers so the Flutter web build (and any other
-/// browser-based client) can talk to this server during development.
-/// Tighten the allowed origin before deploying to production.
+/// Schema version this server speaks. Older clients are warned via
+/// `X-SDUI-Deprecated`; far-older clients could be rejected with 426.
+const int _serverSduiVersion = 1;
+const int _minSupportedClientVersion = 1;
+
+/// Routes the client can reach without a JWT.
+const _publicPathPrefixes = <String>{
+  '/',
+  '/login',
+  '/auth/login',
+};
+
+/// Global middleware:
+/// 1. Permissive CORS (the web build needs it).
+/// 2. SDUI schema-version negotiation — adds X-SDUI-Deprecated when needed.
+/// 3. JWT auth — anything not in [_publicPathPrefixes] requires a valid
+///    Bearer token. On failure responds 401 with an SDUI navigate action.
+/// 4. Injects the authenticated username into the request context so route
+///    handlers can read it via `context.read<AuthUser>()`.
 Handler middleware(Handler handler) {
   return (context) async {
-    // Pre-flight: short-circuit OPTIONS with the CORS headers.
-    if (context.request.method == HttpMethod.options) {
+    final method = context.request.method;
+
+    // CORS preflight: short-circuit.
+    if (method == HttpMethod.options) {
       return Response(statusCode: 204, headers: _corsHeaders);
     }
-    final response = await handler(context);
+
+    final path = context.request.uri.path;
+    final username = _authenticate(context);
+
+    if (_isProtected(path) && username == null) {
+      return Response.json(
+        statusCode: 401,
+        headers: {..._corsHeaders, ..._versionHeaders(context)},
+        body: {
+          'action': sduiAction(type: 'navigate', url: '/login'),
+          'message': 'Please sign in to continue',
+        },
+      );
+    }
+
+    // Attach the authenticated user (or AuthUser.anonymous) for downstream.
+    final authed =
+        username == null ? AuthUser.anonymous : AuthUser(username: username);
+    final inner = context.provide<AuthUser>(() => authed);
+
+    final response = await handler(inner);
     return response.copyWith(
-      headers: {...response.headers, ..._corsHeaders},
+      headers: {
+        ...response.headers,
+        ..._corsHeaders,
+        ..._versionHeaders(context),
+      },
     );
   };
+}
+
+String? _authenticate(RequestContext context) {
+  final token = bearerToken(context.request.headers);
+  final payload = verifyToken(token);
+  return payload?['sub'] as String?;
+}
+
+bool _isProtected(String path) {
+  final normalized = path.endsWith('/') && path.length > 1
+      ? path.substring(0, path.length - 1)
+      : path;
+  return !_publicPathPrefixes.contains(normalized);
+}
+
+Map<String, String> _versionHeaders(RequestContext context) {
+  final headers = <String, String>{};
+  final raw = context.request.headers['x-sdui-version'];
+  final clientVersion = int.tryParse(raw ?? '');
+  if (clientVersion != null && clientVersion < _minSupportedClientVersion) {
+    headers['x-sdui-deprecated'] = 'Client speaks SDUI v$clientVersion. '
+        'Min supported is v$_minSupportedClientVersion - please update.';
+  }
+  headers['x-sdui-version'] = '$_serverSduiVersion';
+  return headers;
 }
 
 const _corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'access-control-allow-headers': 'content-type, authorization',
+  'access-control-allow-headers': 'content-type, authorization, x-sdui-version',
+  'access-control-expose-headers': 'x-sdui-version, x-sdui-deprecated',
   'access-control-max-age': '86400',
 };

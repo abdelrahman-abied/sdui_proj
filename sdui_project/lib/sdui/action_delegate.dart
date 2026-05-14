@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sdui_project/sdui/form_manager.dart';
 import 'package:sdui_project/sdui/sdui_page_loader.dart';
+import 'package:sdui_project/sdui/session_store.dart';
 
 import 'sdui_action.dart';
 
@@ -27,9 +28,20 @@ class SDUIActionDelegate {
       case 'form_submit':
         _handleFormSubmit(context, action);
         break;
+      case 'logout':
+        _handleLogout(context, action);
+        break;
       default:
         debugPrint("⚠️ [ActionDelegate] Unknown action type: ${action.type}");
     }
+  }
+
+  static Future<void> _handleLogout(BuildContext context, SDUIAction action) async {
+    await SessionStore.clear();
+    SDUIApiService.clearCache();
+    if (!context.mounted) return;
+    final target = action.url ?? '/login';
+    Navigator.of(context).pushNamedAndRemoveUntil(target, (_) => false);
   }
 
   // --- Handlers ---
@@ -104,6 +116,16 @@ class SDUIActionDelegate {
         ),
       );
       return;
+    }
+
+    // If the server issued a token (login), persist it so subsequent
+    // requests carry it via the Authorization header.
+    final token = reply['token'] as String?;
+    if (token != null && token.isNotEmpty) {
+      await SessionStore.setToken(token);
+      // Cached responses were issued without auth — drop them so the next
+      // fetch goes through the auth flow.
+      SDUIApiService.clearCache();
     }
 
     if (!context.mounted) return;

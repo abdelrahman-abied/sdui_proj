@@ -112,4 +112,25 @@ void main() {
       expect(exported.containsKey('unknown_id'), isFalse);
     });
   });
+
+  group('fallback_type', () {
+    testWidgets('unknown type renders the fallback', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'FUTURE_WIDGET_V2',
+        'props': {'mystery': 42},
+        'fallback_type': 'TEXT',
+        'fallback_props': {'text': 'Update the app to see the new widget'},
+      }));
+      expect(find.text('Update the app to see the new widget'), findsOneWidget);
+      expect(find.textContaining('Unknown Component'), findsNothing);
+    });
+
+    testWidgets('unknown type with no fallback still shows the banner', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'NOPE_NEVER_HEARD_OF_IT',
+        'props': {},
+      }));
+      expect(find.textContaining('Unknown Component'), findsOneWidget);
+    });
+  });
 }

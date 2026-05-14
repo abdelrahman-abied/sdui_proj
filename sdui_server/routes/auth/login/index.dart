@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dart_frog/dart_frog.dart';
+import 'package:sdui_server/auth.dart';
 import 'package:sdui_server/sdui_actions.dart';
 
 /// Mock credentials store. Replace with a real check when you wire auth.
@@ -35,9 +36,12 @@ Future<Response> onRequest(RequestContext context) async {
     );
   }
 
-  // Success: server decides the post-login destination.
+  // Issue a real JWT. Client persists it and attaches as Authorization header.
+  final token = issueToken(username);
   return Response.json(
     body: {
+      'token': token,
+      'user': {'username': username},
       'action': sduiAction(type: 'navigate', url: '/home'),
       'message': 'Welcome, $username',
     },

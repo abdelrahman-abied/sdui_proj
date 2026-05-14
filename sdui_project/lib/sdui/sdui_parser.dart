@@ -16,9 +16,28 @@ class SDUIParser extends StatelessWidget {
     // 2. Extract the Component Type
     final String type = uiJson['type'] ?? 'UNKNOWN';
 
-    // 3. Look up the Widget in the Registry
-    // We pass the ENTIRE json node so the component can access 'props', 'style', and 'children'
-    final widgetBuilder = ComponentRegistry.getWidgetBuilder(type);
+    // 3. Resolve a builder for the primary type, falling back to whatever
+    // back-compat shape the server provided (fallback_type / fallback_props)
+    // when we don't know the primary. Schema-evolution safety: the server
+    // can ship a v2 component and older clients still render something.
+    var node = uiJson;
+    var widgetBuilder = ComponentRegistry.getWidgetBuilder(type);
+    if (widgetBuilder == null) {
+      final fallbackType = uiJson['fallback_type'] as String?;
+      final fallbackBuilder = fallbackType == null
+          ? null
+          : ComponentRegistry.getWidgetBuilder(fallbackType);
+      if (fallbackBuilder != null) {
+        widgetBuilder = fallbackBuilder;
+        node = {
+          'type': fallbackType,
+          'props': uiJson['fallback_props'] ?? uiJson['props'] ?? const {},
+          if (uiJson['children'] != null) 'children': uiJson['children'],
+          if (uiJson['action'] != null) 'action': uiJson['action'],
+        };
+        debugPrint('[SDUIParser] $type → fallback $fallbackType');
+      }
+    }
 
     // 4. Handle Unknown Components (Version Safety)
     if (widgetBuilder == null) {
@@ -36,7 +55,7 @@ class SDUIParser extends StatelessWidget {
     }
 
     // 5. Build the Native Widget
-    Widget nativeWidget = widgetBuilder(uiJson);
+    Widget nativeWidget = widgetBuilder(node);
 
     // 6. Action Layer (Interaction)
     // If the JSON contains an "action" block, we wrap the widget in a GestureDetector.
