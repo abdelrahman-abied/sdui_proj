@@ -124,14 +124,35 @@ flutter run --dart-define=SDUI_BASE_URL=https://sdui.example.com
 
 ### Test credentials
 
-The mock login endpoint accepts a single account ([routes/auth/login/index.dart](sdui_server/routes/auth/login/index.dart)):
+The mock login endpoint ([routes/auth/login/index.dart](sdui_server/routes/auth/login/index.dart)) accepts one account out of the box:
 
-```text
-username: demo@sdui.app
-password: password
+| | |
+| --- | --- |
+| **Email** | `demo@sdui.app` |
+| **Password** | `password` |
+
+Try these in the running app, or from the terminal:
+
+```bash
+# Happy path — server returns a JWT + navigate /home action
+curl -s -X POST http://localhost:8080/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"demo@sdui.app","password":"password"}' | jq
+
+# Failure path — any other creds get a show_toast action with is_error: true
+curl -s -X POST http://localhost:8080/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"someone@example.com","password":"hunter2"}' | jq
+# → { "action": { "type": "show_toast",
+#                  "data": { "message": "Invalid credentials", "is_error": true } } }
+
+# Missing fields — same failure shape, different message
+curl -s -X POST http://localhost:8080/auth/login \
+  -H 'content-type: application/json' -d '{}' | jq
+# → "Username and password are required"
 ```
 
-Any other credentials trigger an `Invalid credentials` toast (returned as a `show_toast` action by the server).
+To wire your own users, edit `_mockUsername` / `_mockPassword` in [routes/auth/login/index.dart](sdui_server/routes/auth/login/index.dart) or swap the check for a database lookup. The JWT signing secret comes from `SDUI_JWT_SECRET` (defaults to `dev-secret-change-me`).
 
 ### Run the contract test
 
