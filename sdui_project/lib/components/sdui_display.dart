@@ -152,6 +152,81 @@ class SDUICard extends StatelessWidget {
   }
 }
 
+/// Full-screen empty state — large muted icon + title + optional subtitle,
+/// plus a visual "button" affordance when [actionLabel] is set. The actual
+/// tap handling lives at the parser level: when the node carries an
+/// `action`, the parser wraps the whole widget in a GestureDetector so
+/// tapping anywhere triggers the recovery flow.
+class SDUIEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final String? actionLabel;
+
+  const SDUIEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.actionLabel,
+  });
+
+  factory SDUIEmptyState.fromProps(Map<String, dynamic> props) {
+    final iconName = props['icon']?.toString() ?? '';
+    return SDUIEmptyState(
+      icon: _iconLookup[iconName] ?? Icons.inbox_outlined,
+      title: props['title']?.toString() ?? '',
+      subtitle: props['subtitle'] as String?,
+      actionLabel: props['action_label'] as String?,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 64, color: theme.disabledColor),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: theme.textTheme.titleLarge,
+            textAlign: TextAlign.center,
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle!,
+              style: TextStyle(color: theme.hintColor),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (actionLabel != null) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                actionLabel!,
+                style: TextStyle(
+                  color: theme.colorScheme.onPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class SDUIListItem extends StatelessWidget {
   final String title;
   final String? subtitle;

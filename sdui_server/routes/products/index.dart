@@ -16,6 +16,21 @@ Response onRequest(RequestContext context) {
   ];
   final hasMore = lastId < _totalProducts;
 
+  // Over-paginated: nothing on this page. Return a server-driven empty
+  // state instead of an empty LAZY_LIST that would render as a blank
+  // screen on the client.
+  if (ids.isEmpty) {
+    final empty = EmptyState(
+      icon: 'shopping_bag',
+      title: 'No products on this page',
+      subtitle: 'Page $pageIndex is past the end of the catalog. '
+          'Head back to the start to keep browsing.',
+      actionLabel: 'Back to page 1',
+      action: sduiAction(type: 'navigate', url: '/products?page=1'),
+    );
+    return Response.json(body: empty.toJson());
+  }
+
   final products = LazyList(
     nextUrl: hasMore ? '/products?page=${pageIndex + 1}' : null,
     children: [

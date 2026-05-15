@@ -134,6 +134,9 @@ class ComponentRegistry {
     'LIST_ITEM': (node) => SDUIListItem.fromProps(
           Map<String, dynamic>.from(node['props'] as Map? ?? {}),
         ),
+    'EMPTY_STATE': (node) => SDUIEmptyState.fromProps(
+          Map<String, dynamic>.from(node['props'] as Map? ?? {}),
+        ),
 
     // Form input widgets
     'CHECKBOX': (node) {

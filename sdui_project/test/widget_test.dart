@@ -49,6 +49,8 @@ void main() {
         'RADIO_GROUP',
         'SELECT',
         'GRID_2_COL',
+        // Phase 7 additions
+        'EMPTY_STATE',
       ];
       for (final type in serverEmittedTypes) {
         expect(
@@ -181,6 +183,39 @@ void main() {
       expect(find.text('demo@sdui.app'), findsOneWidget);
       expect(find.byIcon(Icons.account_circle), findsOneWidget);
       expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    });
+
+    testWidgets('EMPTY_STATE renders icon + title + subtitle + action label', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'EMPTY_STATE',
+        'props': {
+          'icon': 'shopping_bag',
+          'title': 'No products on this page',
+          'subtitle': 'Head back to the start.',
+          'action_label': 'Back to page 1',
+        },
+        'action': {'type': 'navigate', 'url': '/products?page=1'},
+      }));
+      expect(find.text('No products on this page'), findsOneWidget);
+      expect(find.text('Head back to the start.'), findsOneWidget);
+      expect(find.text('Back to page 1'), findsOneWidget);
+      expect(find.byIcon(Icons.shopping_bag), findsOneWidget);
+      // The parser wraps the whole panel in a GestureDetector when action
+      // is present — that's the visible "tap anywhere to retry" affordance.
+      expect(find.byType(GestureDetector), findsWidgets);
+    });
+
+    testWidgets('EMPTY_STATE without action_label still renders core content', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'EMPTY_STATE',
+        'props': {
+          'icon': 'info',
+          'title': 'Nothing here yet',
+        },
+      }));
+      expect(find.text('Nothing here yet'), findsOneWidget);
+      expect(find.byIcon(Icons.info_outline), findsOneWidget);
+      expect(find.textContaining('Unknown Component'), findsNothing);
     });
   });
 

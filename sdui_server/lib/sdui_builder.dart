@@ -272,6 +272,28 @@ class Grid2Col extends SDUIWidget {
         );
 }
 
+/// Full-screen empty state with icon + title + optional subtitle. When an
+/// [action] is attached the client wraps the whole panel in a tap handler
+/// (and renders [actionLabel] as a visual affordance) — used for empty
+/// lists, "page not found", and similar end-of-flow screens.
+class EmptyState extends SDUIWidget {
+  EmptyState({
+    required String icon,
+    required String title,
+    String? subtitle,
+    String? actionLabel,
+    super.action,
+  }) : super(
+          type: 'EMPTY_STATE',
+          props: {
+            'icon': icon,
+            'title': title,
+            if (subtitle != null) 'subtitle': subtitle,
+            if (actionLabel != null) 'action_label': actionLabel,
+          },
+        );
+}
+
 /// Material ListTile-style row with optional leading/trailing icons.
 class ListItem extends SDUIWidget {
   ListItem({
