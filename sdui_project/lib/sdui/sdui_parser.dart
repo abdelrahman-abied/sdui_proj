@@ -1,7 +1,11 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+
+import 'action_delegate.dart';
 import 'component_registry.dart';
 import 'sdui_action.dart';
-import 'action_delegate.dart';
 
 class SDUIParser extends StatelessWidget {
   final Map<String, dynamic> uiJson;
@@ -55,7 +59,7 @@ class SDUIParser extends StatelessWidget {
     }
 
     // 5. Build the Native Widget
-    Widget nativeWidget = widgetBuilder(node);
+    Widget result = widgetBuilder(node);
 
     // 6. Action Layer (Interaction)
     // If the JSON contains an "action" block, we wrap the widget in a GestureDetector.
@@ -63,21 +67,74 @@ class SDUIParser extends StatelessWidget {
       try {
         final action = SDUIAction.fromJson(Map<String, dynamic>.from(uiJson['action'] as Map));
 
-        return GestureDetector(
+        result = GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             debugPrint("[SDUIParser] Action tap: ${action.type}");
             SDUIActionDelegate.handleAction(context, action);
           },
-          child: nativeWidget,
+          child: result,
         );
       } catch (e) {
         debugPrint("Error parsing action for $type: $e");
-        // If action parsing fails, just return the widget non-clickable
-        return nativeWidget;
+        // Fall through with the un-wrapped widget.
       }
     }
 
-    return nativeWidget;
+    // 7. Debug overlay (debug builds only — tree-shaken out of release).
+    // Long-press any rendered node to pop a bottom sheet showing the JSON
+    // that produced it, plus its `type`. The handler doesn't claim tap, so
+    // existing action wiring still works.
+    if (kDebugMode) {
+      result = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: () => _showDebugSheet(context, type, uiJson),
+        child: result,
+      );
+    }
+
+    return result;
+  }
+
+  static void _showDebugSheet(
+    BuildContext context,
+    String type,
+    Map<String, dynamic> node,
+  ) {
+    const encoder = JsonEncoder.withIndent('  ');
+    String pretty;
+    try {
+      pretty = encoder.convert(node);
+    } catch (_) {
+      pretty = node.toString();
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'SDUI node: $type',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    pretty,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -837,6 +837,44 @@ void main() {
     });
   });
 
+  group('Phase 9.1 — debug overlay', () {
+    testWidgets('long-press on a rendered node pops a sheet with its JSON', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'TEXT',
+        'props': {'text': 'inspect me', 'style': 'title'},
+      }));
+
+      // Tap-and-hold on the rendered text fires the debug overlay.
+      await tester.longPress(find.text('inspect me'));
+      await tester.pumpAndSettle();
+
+      // Sheet header includes the node type, and the body contains a
+      // selectable JSON dump including the prop we set.
+      expect(find.text('SDUI node: TEXT'), findsOneWidget);
+      expect(find.byType(SelectableText), findsOneWidget);
+      final sheetText = tester.widget<SelectableText>(find.byType(SelectableText));
+      expect(sheetText.data, contains('"inspect me"'));
+      expect(sheetText.data, contains('"style": "title"'));
+    });
+
+    testWidgets('action-bearing nodes can still be tapped (long-press is non-conflicting)', (tester) async {
+      // BUTTON_PRIMARY wires a tap action via the parser's GestureDetector.
+      // Adding the debug long-press handler outside should not consume taps.
+      var navigated = false;
+      // Override the navigate handler: we just need to know it fired.
+      // Use show_toast since it's terminal and harmless.
+      await tester.pumpWidget(_wrap({
+        'type': 'BUTTON_PRIMARY',
+        'props': {'label': 'Go'},
+        'action': {'type': 'show_toast', 'data': {'message': 'fired'}},
+      }));
+      await tester.tap(find.text('Go'));
+      await tester.pump();
+      navigated = find.text('fired').evaluate().isNotEmpty;
+      expect(navigated, isTrue, reason: 'tap action should still fire under the debug overlay');
+    });
+  });
+
   group('Phase 7 — loading skeleton', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
