@@ -589,6 +589,74 @@ void main() {
     });
   });
 
+  group('Phase 7 — server-rendered errors', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.debugResetHydration();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('non-2xx with an SDUI body is returned for rendering, not thrown', () async {
+      final errorTree = jsonEncode({
+        'type': 'EMPTY_STATE',
+        'props': {'icon': 'info', 'title': 'Not found'},
+        'action': {'type': 'navigate', 'url': '/products'},
+      });
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        return http.Response(errorTree, 404, headers: {
+          'content-type': 'application/json',
+        });
+      }));
+
+      final result = await SDUIApiService.fetchEndpoint('/product/999');
+      expect(result['type'], 'EMPTY_STATE');
+      expect(result['props']['title'], 'Not found');
+    });
+
+    test('non-2xx with a non-SDUI body still throws', () async {
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        return http.Response('{"message":"boom"}', 500, headers: {
+          'content-type': 'application/json',
+        });
+      }));
+
+      expect(
+        () => SDUIApiService.fetchEndpoint('/blowup'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('server-rendered errors are NOT cached', () async {
+      final errorTree = jsonEncode({
+        'type': 'EMPTY_STATE',
+        'props': {'icon': 'info', 'title': 'Not found'},
+      });
+      final happyTree = jsonEncode({
+        'type': 'TEXT',
+        'props': {'text': 'recovered'},
+      });
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response(errorTree, 404, headers: {'etag': '"err"'});
+        }
+        return http.Response(happyTree, 200, headers: {'etag': '"ok"'});
+      }));
+
+      final err = await SDUIApiService.fetchEndpoint('/product/999');
+      expect(err['type'], 'EMPTY_STATE');
+      // Second call: if the 404 had been cached we'd return EMPTY_STATE
+      // again without a network hit. Instead we expect a re-fetch.
+      final ok = await SDUIApiService.fetchEndpoint('/product/999');
+      expect(ok['props']['text'], 'recovered');
+      expect(calls, 2);
+    });
+  });
+
   group('Phase 6 — server-driven TTL', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});

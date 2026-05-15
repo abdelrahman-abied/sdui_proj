@@ -248,9 +248,14 @@ class SDUIApiService {
     }
 
     final data = await _decode(response, uri);
-    _cache[cacheKey] = _buildCacheEntry(data, response);
-    // Persist asynchronously — the fetch result is what the caller needs.
-    unawaited(CacheStore.save(_cache));
+    // Server-rendered error bodies (non-2xx that _decode handed back as SDUI)
+    // are returned for rendering but kept out of the cache — caching a 404
+    // would mean a recovered route still serves the error screen next time.
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      _cache[cacheKey] = _buildCacheEntry(data, response);
+      // Persist asynchronously — the fetch result is what the caller needs.
+      unawaited(CacheStore.save(_cache));
+    }
     return data;
   }
 
@@ -322,6 +327,9 @@ class SDUIApiService {
         unawaited(CacheStore.save(_cache));
         return;
       }
+      // Non-2xx in the background path: don't replace the good cached body
+      // with an error screen, and don't bother decoding.
+      if (response.statusCode < 200 || response.statusCode >= 300) return;
       final data = await _decode(response, uri);
       _cache[cacheKey] = _buildCacheEntry(data, response);
       unawaited(CacheStore.save(_cache));
@@ -383,6 +391,12 @@ class SDUIApiService {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      // Server-rendered error: if the body parses as SDUI, hand it back so
+      // the page renders the recovery tree instead of falling back to the
+      // generic "Failed to load" widget. The 2xx-only cache write in
+      // fetchEndpoint keeps these out of the persistent cache.
+      final decoded = _tryDecodeBody(response.body);
+      if (_looksLikeSDUI(decoded)) return decoded!;
       throw Exception('SDUI request failed (${response.statusCode}) for $uri');
     }
     final decoded = _tryDecodeBody(response.body);
@@ -390,6 +404,15 @@ class SDUIApiService {
       throw Exception('SDUI response is not a JSON object for $uri');
     }
     return decoded;
+  }
+
+  /// True when [decoded] looks like an SDUI tree — has either a top-level
+  /// `type` (single-node response) or `ui_tree` (wrapped response). Used to
+  /// distinguish a server-rendered error screen from a plain error JSON
+  /// (`{message: "..."}`) we should surface as a thrown exception.
+  static bool _looksLikeSDUI(Map<String, dynamic>? decoded) {
+    if (decoded == null) return false;
+    return decoded.containsKey('type') || decoded.containsKey('ui_tree');
   }
 
   static Map<String, dynamic>? _tryDecodeBody(String body) {
