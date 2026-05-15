@@ -23,7 +23,10 @@ class CachedResponse {
   bool isExpired({DateTime? now}) {
     if (storedAt == null || maxAgeSeconds == null) return false;
     final current = (now ?? DateTime.now()).millisecondsSinceEpoch;
-    return current - storedAt! > maxAgeSeconds! * 1000;
+    // `>=` so a `max-age=0` directive (HTTP "must-revalidate") fires every
+    // read — strict `>` would let a same-millisecond second fetch serve a
+    // body the server already told us is stale.
+    return current - storedAt! >= maxAgeSeconds! * 1000;
   }
 
   Map<String, dynamic> _toJson() => {

@@ -239,6 +239,11 @@ class SDUIApiService {
 
     final response = await _client.get(uri, headers: headers);
     if (response.statusCode == 304 && cached != null) {
+      // Server confirmed the cached body is still current — refresh storedAt
+      // (and pick up any new max-age) so we don't immediately revalidate
+      // again on the next read.
+      _cache[cacheKey] = _refreshedEntry(cached, response);
+      unawaited(CacheStore.save(_cache));
       return Map<String, dynamic>.from(cached.data);
     }
 
@@ -261,6 +266,22 @@ class SDUIApiService {
       etag: response.headers['etag'],
       storedAt: DateTime.now().millisecondsSinceEpoch,
       maxAgeSeconds: _parseMaxAge(response.headers['cache-control']),
+    );
+  }
+
+  /// Rebuilds [cached] with a new `storedAt` (and updated `maxAge`, if the
+  /// 304 carried one) — used when the server confirms an expired entry is
+  /// still current so the next read doesn't re-revalidate immediately.
+  static CachedResponse _refreshedEntry(
+    CachedResponse cached,
+    http.Response response,
+  ) {
+    return CachedResponse(
+      data: cached.data,
+      etag: response.headers['etag'] ?? cached.etag,
+      storedAt: DateTime.now().millisecondsSinceEpoch,
+      maxAgeSeconds:
+          _parseMaxAge(response.headers['cache-control']) ?? cached.maxAgeSeconds,
     );
   }
 
@@ -294,7 +315,13 @@ class SDUIApiService {
         headers['if-none-match'] = cached.etag!;
       }
       final response = await _client.get(uri, headers: headers);
-      if (response.statusCode == 304) return;
+      if (response.statusCode == 304) {
+        // Server confirmed staleness wasn't a problem — bump TTL so a
+        // subsequent foreground read can return from cache.
+        _cache[cacheKey] = _refreshedEntry(cached, response);
+        unawaited(CacheStore.save(_cache));
+        return;
+      }
       final data = await _decode(response, uri);
       _cache[cacheKey] = _buildCacheEntry(data, response);
       unawaited(CacheStore.save(_cache));

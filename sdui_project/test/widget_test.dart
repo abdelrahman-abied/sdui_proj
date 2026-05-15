@@ -602,6 +602,36 @@ void main() {
           reason: 'expired path must still try the 304 shortcut');
     });
 
+    test('304 on the expired path refreshes the TTL so the next read hits cache', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'aged'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          // Seed: store the entry already expired (max-age=0).
+          return http.Response(body, 200, headers: {
+            'etag': '"v1"',
+            'cache-control': 'max-age=0',
+          });
+        }
+        // Foreground revalidation finds nothing has changed AND the server
+        // now advertises a longer freshness window — entry should be reborn.
+        expect(req.headers['if-none-match'], '"v1"');
+        return http.Response('', 304, headers: {
+          'etag': '"v1"',
+          'cache-control': 'max-age=300',
+        });
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      // First read after seeding: entry is expired, forces revalidation.
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 2);
+      // Now within the refreshed 300s window — must not hit the network.
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 2, reason: '304 should have refreshed the TTL');
+    });
+
     test('no Cache-Control header keeps the legacy "never expires" semantics', () async {
       final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'no-ttl'}});
       var calls = 0;
