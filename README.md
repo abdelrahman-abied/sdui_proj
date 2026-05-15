@@ -813,9 +813,17 @@ Form widgets (`INPUT_TEXT`, `CHECKBOX`, `SWITCH`, `RADIO_GROUP`, `SELECT`) all r
 | `navigate` | `Navigator.pushNamed(url)` — `SDUIGenericPage` fetches that path. |
 | `pop` | `Navigator.pop()`. |
 | `show_toast` | `SnackBar` from `data.message` (`is_error: true` → red). |
-| `form_submit` | Validates inputs locally, POSTs form data to `url`, displays `reply.message`, then dispatches whatever `reply.action` returns. Persists `reply.token` via `SessionStore` if present. |
+| `form_submit` | Validates inputs locally, POSTs form data to `url`, displays `reply.message`. Paints `reply.errors` inline if present. Otherwise dispatches `reply.action` and persists `reply.token` if present. Form data is kept across navigations unless `reply.clear_form` is true. |
 | `logout` | Clears the persisted JWT + in-memory cache and navigates to `action.url` (default `/login`). |
+| `sequence` | Runs `action.actions` in order, awaiting each. |
 | `network_request` | Fires an out-of-band HTTP call. |
+
+Universal modifiers on any action:
+
+| Field | Effect |
+| --- | --- |
+| `if: {field, equals\|not_equals\|truthy}` | Evaluated against `FormManager.export()` before dispatch. Skips when false. |
+| `confirm: {title, message, confirmLabel, cancelLabel, destructive}` | Shows an `AlertDialog`; action only runs on confirm. |
 
 ### Auth headers in/out
 
@@ -951,11 +959,101 @@ Every screen that uses `@token` colors reflects the new brand.
 
 ---
 
+## Composing actions
+
+The action protocol is more than `navigate` and `show_toast`. Any action can be wrapped in a confirmation dialog, gated by a condition on form state, or composed into a sequence — all from JSON, no client code change.
+
+### Sequence — run several actions in order
+
+```dart
+sduiSequence([
+  sduiAction(type: 'show_toast', data: {'message': 'Saving…'}),
+  sduiAction(type: 'navigate', url: '/home'),
+])
+```
+
+The client awaits each inner action before starting the next. Sequences nest.
+
+### Confirm — show a dialog before running
+
+```dart
+sduiConfirm(
+  sduiAction(type: 'logout', url: '/login'),
+  title: 'Sign out?',
+  message: "You'll need to sign in again.",
+  confirmLabel: 'Sign out',
+  destructive: true,         // red confirm button
+)
+```
+
+The wrapped action runs only if the user taps confirm.
+
+### `if` — gate on a form field
+
+Useful for "Submit" buttons whose behavior depends on a checkbox state:
+
+```dart
+sduiWhen(
+  sduiAction(type: 'form_submit', url: '/checkout'),
+  field: 'agree',
+  equals: true,
+)
+```
+
+Supported predicates: `equals`, `not_equals`, `truthy`. The condition is evaluated against `SDUIFormManager.export()` on the client just before dispatch.
+
+### Server-driven field errors
+
+A `form_submit` reply that contains an `errors` map paints the messages inline on the matching `INPUT_TEXT` widgets and **keeps the form mounted** (no navigate):
+
+```dart
+// POST /settings/save
+return Response.json(body: sduiFieldErrors({
+  'plan': 'Pick a plan',
+  'language': 'Pick a language',
+}));
+```
+
+The client reads `reply.errors` and assigns `FormManager.fieldErrors`. Adding new fields to validation requires no client release.
+
+### Multi-step forms
+
+`form_submit` no longer clears the form by default. To preserve user input across pages (think wizard: step 1 → step 2 → review → submit), the server simply returns `navigate` and the singleton `FormManager` carries the values forward. When the final step succeeds, the server sends:
+
+```json
+{
+  "clear_form": true,
+  "action": { "type": "navigate", "url": "/home" }
+}
+```
+
+That flag is the only way the form gets cleared.
+
+### Composing all of these
+
+The danger zone in `/settings` chains every Phase 5 feature into one action:
+
+```dart
+sduiConfirm(
+  sduiSequence([
+    sduiAction(type: 'show_toast', data: {'message': 'Account deleted'}),
+    sduiAction(type: 'logout', url: '/login'),
+  ]),
+  title: 'Delete this account?',
+  message: 'This permanently removes your data.',
+  confirmLabel: 'Delete',
+  destructive: true,
+)
+```
+
+Tap → confirm dialog → on confirm, the sequence runs (toast, then logout clears session and navigates).
+
+---
+
 ## Going further
 
 Worth-doing items not yet implemented in this repo:
 
-- **Chained / conditional actions** — `action: [a, b, c]` and `action.if: {field: value}`.
 - **Cache with ETag + stale-while-revalidate + persistent disk cache** for offline-first.
 - **Server-driven loading/empty/error skeletons** so each screen has its own shimmer.
 - **Server-Sent Events** for live UI refresh.

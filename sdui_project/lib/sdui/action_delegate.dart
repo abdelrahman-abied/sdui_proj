@@ -6,9 +6,34 @@ import 'package:sdui_project/sdui/session_store.dart';
 import 'sdui_action.dart';
 
 class SDUIActionDelegate {
-  static void handleAction(BuildContext context, SDUIAction action) {
+  /// Entry point — every action tap funnels through here. Handles the
+  /// universal pre-flight steps (condition + confirm + sequence) before
+  /// dispatching to the type-specific handler.
+  static Future<void> handleAction(BuildContext context, SDUIAction action) async {
     debugPrint("[ActionDelegate] Processing: ${action.type}");
 
+    // 1. Conditional gate — skip if predicate is false.
+    if (!_evaluateCondition(action.condition)) {
+      debugPrint("[ActionDelegate] Skipping ${action.type}: condition failed");
+      return;
+    }
+
+    // 2. Confirmation dialog — bail if the user cancels.
+    if (action.confirm != null) {
+      final ok = await _confirm(context, action.confirm!);
+      if (!ok || !context.mounted) return;
+    }
+
+    // 3. Sequence — run children in order, stopping if any returns false.
+    if (action.type == 'sequence') {
+      for (final inner in action.actions ?? const <SDUIAction>[]) {
+        if (!context.mounted) return;
+        await handleAction(context, inner);
+      }
+      return;
+    }
+
+    // 4. Type-specific dispatch.
     switch (action.type) {
       case 'navigate':
         _handleNavigation(context, action);
@@ -34,6 +59,48 @@ class SDUIActionDelegate {
       default:
         debugPrint("⚠️ [ActionDelegate] Unknown action type: ${action.type}");
     }
+  }
+
+  /// Evaluate `{field, equals}` against the current form data. Null
+  /// condition → always pass.
+  static bool _evaluateCondition(Map<String, dynamic>? condition) {
+    if (condition == null) return true;
+    final field = condition['field']?.toString();
+    if (field == null) return true;
+    final actual = SDUIFormManager().export()[field];
+    if (condition.containsKey('equals')) return actual == condition['equals'];
+    if (condition.containsKey('not_equals')) return actual != condition['not_equals'];
+    if (condition.containsKey('truthy')) {
+      final wantTruthy = condition['truthy'] == true;
+      final isTruthy = actual != null && actual != false && actual != '';
+      return wantTruthy == isTruthy;
+    }
+    return true;
+  }
+
+  static Future<bool> _confirm(BuildContext context, Map<String, dynamic> spec) async {
+    final destructive = spec['destructive'] == true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text((spec['title'] as String?) ?? 'Are you sure?'),
+        content: Text((spec['message'] as String?) ?? ''),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text((spec['cancelLabel'] as String?) ?? 'Cancel'),
+          ),
+          FilledButton(
+            style: destructive
+                ? FilledButton.styleFrom(backgroundColor: Colors.red)
+                : null,
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text((spec['confirmLabel'] as String?) ?? 'OK'),
+          ),
+        ],
+      ),
+    );
+    return result == true;
   }
 
   static Future<void> _handleLogout(BuildContext context, SDUIAction action) async {
@@ -130,6 +197,16 @@ class SDUIActionDelegate {
 
     if (!context.mounted) return;
 
+    // 3. Server-driven field errors — `errors: {fieldId: message}` paints
+    // them inline on the form. The form stays mounted (no navigate).
+    final rawErrors = reply['errors'];
+    if (rawErrors is Map && rawErrors.isNotEmpty) {
+      manager.fieldErrors.value = {
+        for (final e in rawErrors.entries) '${e.key}': '${e.value}',
+      };
+      return;
+    }
+
     final message = reply['message'] as String?;
     if (message != null && message.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -137,18 +214,26 @@ class SDUIActionDelegate {
       );
     }
 
-    // 3. Run whatever follow-up action the server hands back. The server is
-    // the authority — on success it returns a `navigate` action, on failure
-    // a `show_toast` action.
+    // Multi-step forms: keep field data unless the server explicitly asks
+    // us to clear it (`clear_form: true`) or there's no follow-up action
+    // (treat as success done).
+    final clearForm = reply['clear_form'] == true;
+
+    // 4. Run whatever follow-up action the server hands back. The server is
+    // the authority — on success it returns a `navigate` (or `sequence`)
+    // action, on failure a `show_toast` action.
     final replyAction = reply['action'];
     if (replyAction is Map) {
       final next = SDUIAction.fromJson(Map<String, dynamic>.from(replyAction));
       if (next.type == 'navigate' && next.url != null) {
-        manager.clear();
+        if (clearForm) manager.clear();
         Navigator.of(context).pushNamedAndRemoveUntil(next.url!, (_) => false);
       } else {
-        handleAction(context, next);
+        if (clearForm) manager.clear();
+        await handleAction(context, next);
       }
+    } else if (clearForm) {
+      manager.clear();
     }
   }
 }

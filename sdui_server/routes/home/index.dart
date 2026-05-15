@@ -61,7 +61,13 @@ Response onRequest(RequestContext context) {
           ListItem(
             title: 'Sign out',
             leadingIcon: 'logout',
-            action: sduiAction(type: 'logout', url: '/login'),
+            action: sduiConfirm(
+              sduiAction(type: 'logout', url: '/login'),
+              title: 'Sign out?',
+              message: "You'll need to sign in again to use the app.",
+              confirmLabel: 'Sign out',
+              destructive: true,
+            ),
           ),
         ],
       ),

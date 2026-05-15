@@ -104,6 +104,33 @@ Response onRequest(RequestContext context) {
           ),
         ],
       ),
+
+      // Danger zone — confirm wraps a sequence (toast then logout).
+      // Tap → "Delete account?" dialog → on confirm, show a goodbye toast,
+      // then clear session and navigate to /login.
+      sdui.SDUIContainer(
+        padding: 16,
+        children: [
+          sdui.SDUIText(text: 'Danger zone', style: 'subtitle', color: '@danger'),
+          sdui.ButtonPrimary(
+            label: 'Delete account',
+            action: sduiConfirm(
+              sduiSequence([
+                sduiAction(
+                  type: 'show_toast',
+                  data: {'message': 'Account deleted'},
+                ),
+                sduiAction(type: 'logout', url: '/login'),
+              ]),
+              title: 'Delete this account?',
+              message: 'This permanently removes your data. This action '
+                  'cannot be undone.',
+              confirmLabel: 'Delete',
+              destructive: true,
+            ),
+          ),
+        ],
+      ),
     ],
   );
 

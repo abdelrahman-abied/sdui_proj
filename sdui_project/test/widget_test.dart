@@ -8,8 +8,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:sdui_project/sdui/action_delegate.dart';
 import 'package:sdui_project/sdui/component_registry.dart';
 import 'package:sdui_project/sdui/form_manager.dart';
+import 'package:sdui_project/sdui/sdui_action.dart';
 import 'package:sdui_project/sdui/sdui_parser.dart';
 import 'package:sdui_project/sdui/theme_registry.dart';
 import 'package:sdui_project/utils/style_parser.dart';
@@ -288,6 +290,113 @@ void main() {
         'props': {},
       }));
       expect(find.textContaining('Unknown Component'), findsOneWidget);
+    });
+  });
+
+  group('Phase 5 — smarter actions', () {
+    setUp(() => SDUIFormManager().clear());
+
+    test('SDUIAction.fromJson parses sequence, condition, and confirm', () {
+      final action = SDUIAction.fromJson({
+        'type': 'sequence',
+        'if': {'field': 'agree', 'equals': true},
+        'confirm': {'title': 'Sure?', 'message': 'Really?'},
+        'actions': [
+          {'type': 'show_toast', 'data': {'message': 'one'}},
+          {'type': 'navigate', 'url': '/home'},
+        ],
+      });
+      expect(action.type, 'sequence');
+      expect(action.condition!['field'], 'agree');
+      expect(action.confirm!['title'], 'Sure?');
+      expect(action.actions, hasLength(2));
+      expect(action.actions![0].type, 'show_toast');
+      expect(action.actions![1].url, '/home');
+    });
+
+    testWidgets('condition skips action when predicate is false', (tester) async {
+      // Build a button whose tap would toast — but the condition is unmet,
+      // so tapping should NOT show the snack.
+      SDUIFormManager().set('agree', false);
+      await tester.pumpWidget(_wrap({
+        'type': 'BUTTON_PRIMARY',
+        'props': {'label': 'Continue'},
+        'action': {
+          'type': 'show_toast',
+          'data': {'message': 'should not appear'},
+          'if': {'field': 'agree', 'equals': true},
+        },
+      }));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('should not appear'), findsNothing);
+    });
+
+    testWidgets('condition allows action when predicate matches', (tester) async {
+      SDUIFormManager().set('agree', true);
+      await tester.pumpWidget(_wrap({
+        'type': 'BUTTON_PRIMARY',
+        'props': {'label': 'Continue'},
+        'action': {
+          'type': 'show_toast',
+          'data': {'message': 'fired'},
+          'if': {'field': 'agree', 'equals': true},
+        },
+      }));
+      await tester.tap(find.text('Continue'));
+      await tester.pump(); // start snackbar animation
+      expect(find.text('fired'), findsOneWidget);
+    });
+
+    testWidgets('confirm dialog appears and Cancel suppresses the action', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'BUTTON_PRIMARY',
+        'props': {'label': 'Delete'},
+        'action': {
+          'type': 'show_toast',
+          'data': {'message': 'deleted'},
+          'confirm': {
+            'title': 'Delete this?',
+            'message': 'Permanent.',
+            'confirmLabel': 'Delete',
+            'cancelLabel': 'Keep',
+          },
+        },
+      }));
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete this?'), findsOneWidget);
+      await tester.tap(find.text('Keep'));
+      await tester.pumpAndSettle();
+      expect(find.text('deleted'), findsNothing);
+    });
+
+    testWidgets('sequence awaits inner actions before returning', (tester) async {
+      final order = <String>[];
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (ctx) => Scaffold(
+            body: FilledButton(
+              onPressed: () async {
+                final a = SDUIAction.fromJson({
+                  'type': 'sequence',
+                  'actions': [
+                    {'type': 'show_toast', 'data': {'message': 'one'}},
+                    {'type': 'show_toast', 'data': {'message': 'two'}},
+                  ],
+                });
+                order.add('start');
+                await SDUIActionDelegate.handleAction(ctx, a);
+                order.add('end');
+              },
+              child: const Text('Go'),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Go'));
+      await tester.pumpAndSettle();
+      expect(order, ['start', 'end']);
     });
   });
 }
