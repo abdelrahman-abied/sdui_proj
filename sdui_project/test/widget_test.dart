@@ -28,6 +28,17 @@ void main() {
         'BUTTON_PRIMARY',
         'INPUT_TEXT',
         'LAZY_LIST',
+        // Phase 4 additions
+        'DIVIDER',
+        'ICON',
+        'BADGE',
+        'CARD',
+        'LIST_ITEM',
+        'CHECKBOX',
+        'SWITCH',
+        'RADIO_GROUP',
+        'SELECT',
+        'GRID_2_COL',
       ];
       for (final type in serverEmittedTypes) {
         expect(
@@ -110,6 +121,113 @@ void main() {
       final exported = SDUIFormManager().export();
       expect(exported['email'], 'a@b.c');
       expect(exported.containsKey('unknown_id'), isFalse);
+    });
+  });
+
+  group('display widgets', () {
+    testWidgets('DIVIDER renders without error', (tester) async {
+      await tester.pumpWidget(_wrap({'type': 'DIVIDER', 'props': {'thickness': 2}}));
+      expect(find.byType(Divider), findsOneWidget);
+    });
+
+    testWidgets('ICON renders the named material icon', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'ICON',
+        'props': {'name': 'settings'},
+      }));
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+    });
+
+    testWidgets('BADGE renders its text', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'BADGE',
+        'props': {'text': 'NEW'},
+      }));
+      expect(find.text('NEW'), findsOneWidget);
+    });
+
+    testWidgets('CARD wraps its children', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'CARD',
+        'props': {},
+        'children': [
+          {'type': 'TEXT', 'props': {'text': 'In a card'}},
+        ],
+      }));
+      expect(find.text('In a card'), findsOneWidget);
+    });
+
+    testWidgets('LIST_ITEM renders title + subtitle + icons', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'LIST_ITEM',
+        'props': {
+          'title': 'Profile',
+          'subtitle': 'demo@sdui.app',
+          'leadingIcon': 'account_circle',
+          'trailingIcon': 'chevron_right',
+        },
+      }));
+      expect(find.text('Profile'), findsOneWidget);
+      expect(find.text('demo@sdui.app'), findsOneWidget);
+      expect(find.byIcon(Icons.account_circle), findsOneWidget);
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    });
+  });
+
+  group('form input widgets', () {
+    setUp(() => SDUIFormManager().clear());
+
+    testWidgets('CHECKBOX registers value in form manager and updates on tap', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'CHECKBOX',
+        'props': {'id': 'agree', 'label': 'I agree', 'default': false},
+      }));
+      expect(SDUIFormManager().export()['agree'], false);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+      expect(SDUIFormManager().export()['agree'], true);
+    });
+
+    testWidgets('SWITCH registers value in form manager', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'SWITCH',
+        'props': {'id': 'dark_mode', 'label': 'Dark mode', 'default': true},
+      }));
+      expect(SDUIFormManager().export()['dark_mode'], true);
+    });
+
+    testWidgets('RADIO_GROUP picks up default and stores selection', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'RADIO_GROUP',
+        'props': {
+          'id': 'plan',
+          'label': 'Plan',
+          'default': 'pro',
+          'options': [
+            {'value': 'free', 'label': 'Free'},
+            {'value': 'pro', 'label': 'Pro'},
+          ],
+        },
+      }));
+      expect(SDUIFormManager().export()['plan'], 'pro');
+      expect(find.text('Free'), findsOneWidget);
+      expect(find.text('Pro'), findsOneWidget);
+    });
+
+    testWidgets('SELECT picks up default', (tester) async {
+      await tester.pumpWidget(_wrap({
+        'type': 'SELECT',
+        'props': {
+          'id': 'language',
+          'label': 'Language',
+          'default': 'en',
+          'options': [
+            {'value': 'en', 'label': 'English'},
+            {'value': 'es', 'label': 'Español'},
+          ],
+        },
+      }));
+      expect(SDUIFormManager().export()['language'], 'en');
     });
   });
 

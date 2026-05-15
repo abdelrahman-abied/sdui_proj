@@ -133,3 +133,160 @@ class SDUIContainer extends SDUIWidget {
           },
         );
 }
+
+/// Horizontal rule.
+class Divider extends SDUIWidget {
+  Divider({double? thickness, String? color, double? indent})
+      : super(
+          type: 'DIVIDER',
+          props: {
+            if (thickness != null) 'thickness': thickness,
+            if (color != null) 'color': color,
+            if (indent != null) 'indent': indent,
+          },
+        );
+}
+
+/// Material icon by name (e.g. `'settings'`, `'chevron_right'`).
+class SDUIIcon extends SDUIWidget {
+  SDUIIcon({required String name, double? size, String? color, super.action})
+      : super(
+          type: 'ICON',
+          props: {
+            'name': name,
+            if (size != null) 'size': size,
+            if (color != null) 'color': color,
+          },
+        );
+}
+
+/// Small label / pill.
+class Badge extends SDUIWidget {
+  Badge({
+    required String text,
+    String? backgroundColor,
+    String? color,
+  }) : super(
+          type: 'BADGE',
+          props: {
+            'text': text,
+            if (backgroundColor != null) 'backgroundColor': backgroundColor,
+            if (color != null) 'color': color,
+          },
+        );
+}
+
+/// Material Card — elevated container with default padding.
+class Card extends SDUIWidget {
+  Card({
+    double? padding,
+    double? margin,
+    double? elevation,
+    super.children,
+    super.action,
+  }) : super(
+          type: 'CARD',
+          props: {
+            if (padding != null) 'padding': padding,
+            if (margin != null) 'margin': margin,
+            if (elevation != null) 'elevation': elevation,
+          },
+        );
+}
+
+/// Single boolean toggle as a checkbox. Registers under [id] in the form
+/// manager; the value is `true` / `false`.
+class Checkbox extends SDUIWidget {
+  Checkbox({
+    required String id,
+    required String label,
+    bool defaultValue = false,
+  }) : super(
+          type: 'CHECKBOX',
+          props: {
+            'id': id,
+            'label': label,
+            'default': defaultValue,
+          },
+        );
+}
+
+/// Boolean toggle rendered as an iOS-style switch.
+class Switch extends SDUIWidget {
+  Switch({
+    required String id,
+    required String label,
+    bool defaultValue = false,
+  }) : super(
+          type: 'SWITCH',
+          props: {
+            'id': id,
+            'label': label,
+            'default': defaultValue,
+          },
+        );
+}
+
+/// Single-select radio group. [options] is a list of {value, label} maps.
+class RadioGroup extends SDUIWidget {
+  RadioGroup({
+    required String id,
+    required String label,
+    required List<Map<String, String>> options,
+    String? defaultValue,
+  }) : super(
+          type: 'RADIO_GROUP',
+          props: {
+            'id': id,
+            'label': label,
+            'options': options,
+            if (defaultValue != null) 'default': defaultValue,
+          },
+        );
+}
+
+/// Dropdown select. Same option shape as [RadioGroup].
+class Select extends SDUIWidget {
+  Select({
+    required String id,
+    required String label,
+    required List<Map<String, String>> options,
+    String? defaultValue,
+  }) : super(
+          type: 'SELECT',
+          props: {
+            'id': id,
+            'label': label,
+            'options': options,
+            if (defaultValue != null) 'default': defaultValue,
+          },
+        );
+}
+
+/// Two-column grid.
+class Grid2Col extends SDUIWidget {
+  Grid2Col({double? spacing, super.children, super.action})
+      : super(
+          type: 'GRID_2_COL',
+          props: {if (spacing != null) 'spacing': spacing},
+        );
+}
+
+/// Material ListTile-style row with optional leading/trailing icons.
+class ListItem extends SDUIWidget {
+  ListItem({
+    required String title,
+    String? subtitle,
+    String? leadingIcon,
+    String? trailingIcon,
+    super.action,
+  }) : super(
+          type: 'LIST_ITEM',
+          props: {
+            'title': title,
+            if (subtitle != null) 'subtitle': subtitle,
+            if (leadingIcon != null) 'leadingIcon': leadingIcon,
+            if (trailingIcon != null) 'trailingIcon': trailingIcon,
+          },
+        );
+}

@@ -22,11 +22,11 @@ class SDUIFormManager {
     }
   }
 
-  // 2. Update value (Called by UI)
-  void set(String id, String value) {
+  // 2. Update value (Called by UI). Accepts any JSON-serializable value —
+  // String for text inputs, bool for checkbox/switch, String for radio/select.
+  void set(String id, dynamic value) {
     _formData[id] = value;
     debugPrint("📝 Form Update [$id]: $value");
-    // Clear error for this field when user types
     clearFieldError(id);
   }
 

@@ -4,9 +4,11 @@ import 'package:sdui_project/sdui/sdui_input.dart';
 import 'package:sdui_project/sdui/sdui_parser.dart';
 
 import '../components/sdui_components.dart';
-import '../components/sdui_container.dart'; // Import Container
-import '../components/sdui_grid.dart'; // Import Grid
-import '../utils/style_parser.dart'; // Import Parser
+import '../components/sdui_container.dart';
+import '../components/sdui_display.dart';
+import '../components/sdui_form_inputs.dart';
+import '../components/sdui_grid.dart';
+import '../utils/style_parser.dart';
 
 typedef SDUIWidgetBuilder = Widget Function(Map<String, dynamic> node);
 
@@ -117,6 +119,63 @@ class ComponentRegistry {
       );
     },
     'LAZY_LIST': (node) => SDUILazyList(uiJson: node),
+
+    // Display widgets
+    'DIVIDER': (node) => SDUIDivider.fromProps(
+          Map<String, dynamic>.from(node['props'] as Map? ?? {}),
+        ),
+    'ICON': (node) => SDUIIcon.fromProps(
+          Map<String, dynamic>.from(node['props'] as Map? ?? {}),
+        ),
+    'BADGE': (node) => SDUIBadge.fromProps(
+          Map<String, dynamic>.from(node['props'] as Map? ?? {}),
+        ),
+    'CARD': (node) => SDUICard(uiJson: Map<String, dynamic>.from(node)),
+    'LIST_ITEM': (node) => SDUIListItem.fromProps(
+          Map<String, dynamic>.from(node['props'] as Map? ?? {}),
+        ),
+
+    // Form input widgets
+    'CHECKBOX': (node) {
+      final props = Map<String, dynamic>.from(node['props'] as Map? ?? {});
+      return SDUICheckbox(
+        id: props['id']?.toString() ?? 'unknown_id',
+        label: props['label']?.toString() ?? '',
+        defaultValue: props['default'] as bool? ?? false,
+      );
+    },
+    'SWITCH': (node) {
+      final props = Map<String, dynamic>.from(node['props'] as Map? ?? {});
+      return SDUISwitch(
+        id: props['id']?.toString() ?? 'unknown_id',
+        label: props['label']?.toString() ?? '',
+        defaultValue: props['default'] as bool? ?? false,
+      );
+    },
+    'RADIO_GROUP': (node) {
+      final props = Map<String, dynamic>.from(node['props'] as Map? ?? {});
+      final rawOptions = (props['options'] as List?) ?? const [];
+      return SDUIRadioGroup(
+        id: props['id']?.toString() ?? 'unknown_id',
+        label: props['label']?.toString() ?? '',
+        options: rawOptions
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+        defaultValue: props['default'] as String?,
+      );
+    },
+    'SELECT': (node) {
+      final props = Map<String, dynamic>.from(node['props'] as Map? ?? {});
+      final rawOptions = (props['options'] as List?) ?? const [];
+      return SDUISelect(
+        id: props['id']?.toString() ?? 'unknown_id',
+        label: props['label']?.toString() ?? '',
+        options: rawOptions
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+        defaultValue: props['default'] as String?,
+      );
+    },
   };
 
   static SDUIWidgetBuilder? getWidgetBuilder(String type) {

@@ -190,11 +190,25 @@ Each node served by the backend has the shape:
 | `VERTICAL_STACK` | `VerticalStack` | `Column` | — |
 | `HORIZONTAL_SCROLL` | `HorizontalScroll` | Horizontal `SingleChildScrollView` | — |
 | `CONTAINER` | `SDUIContainer` | `Container` | `padding`, `margin`, `backgroundColor`, `cornerRadius` |
+| `CARD` | `Card` | Material `Card` | `padding`, `margin`, `elevation` |
+| `GRID_2_COL` | `Grid2Col` | 2-column `GridView` | `spacing` |
 | `TEXT` | `SDUIText` | `Text` | `text`, `style` (`title` / `subtitle` / `body`), `color` |
 | `IMAGE` | `SDUIImage` | `Image.network` with fallback | `url`, `height`, `width` |
+| `ICON` | `SDUIIcon` | Material `Icon` | `name`, `size`, `color` |
+| `BADGE` | `Badge` | Pill chip | `text`, `backgroundColor`, `color` |
+| `DIVIDER` | `Divider` | `Divider` | `thickness`, `color`, `indent` |
+| `LIST_ITEM` | `ListItem` | `ListTile` | `title`, `subtitle`, `leadingIcon`, `trailingIcon` |
 | `BUTTON_PRIMARY` | `ButtonPrimary` | Filled button | `label` |
 | `INPUT_TEXT` | `InputText` | `TextField` registered in `FormManager` | `id`, `label`, `placeholder` |
+| `CHECKBOX` | `Checkbox` | `CheckboxListTile` registered in form | `id`, `label`, `default` |
+| `SWITCH` | `Switch` | `SwitchListTile` registered in form | `id`, `label`, `default` |
+| `RADIO_GROUP` | `RadioGroup` | Stacked radios registered in form | `id`, `label`, `options` (`{value,label}[]`), `default` |
+| `SELECT` | `Select` | Dropdown registered in form | `id`, `label`, `options`, `default` |
 | `LAZY_LIST` | `LazyList` | Paginated `ListView` | `nextUrl` (omitted on the last page) |
+
+Form widgets (`INPUT_TEXT`, `CHECKBOX`, `SWITCH`, `RADIO_GROUP`, `SELECT`) all register themselves with the singleton `SDUIFormManager` by their `props.id` and are merged into the body of any sibling `form_submit` action automatically.
+
+For a screen that exercises most of these in one place, hit `GET /settings` (the `Settings` row on `/home` navigates there).
 
 ### Action payloads
 

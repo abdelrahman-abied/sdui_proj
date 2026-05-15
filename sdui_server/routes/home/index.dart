@@ -30,25 +30,37 @@ Response onRequest(RequestContext context) {
           ),
         ],
       ),
-      // Server-driven navigation: each button's URL is the next endpoint
+      // Server-driven navigation: each row's URL is the next endpoint
       // the client will fetch — no client-side route table involved.
-      SDUIContainer(
-        padding: 16,
+      Card(
         children: [
-          ButtonPrimary(
-            label: 'Show Products',
+          ListItem(
+            title: 'Products',
+            subtitle: 'Browse the catalog',
+            leadingIcon: 'shopping_bag',
+            trailingIcon: 'chevron_right',
             action: sduiAction(type: 'navigate', url: '/products'),
           ),
-          ButtonPrimary(
-            label: 'Open Product #123',
-            action: sduiAction(type: 'navigate', url: '/product/123'),
-          ),
-          ButtonPrimary(
-            label: 'Browse Feed',
+          Divider(indent: 16),
+          ListItem(
+            title: 'Feed',
+            subtitle: 'Latest updates',
+            leadingIcon: 'home',
+            trailingIcon: 'chevron_right',
             action: sduiAction(type: 'navigate', url: '/feed'),
           ),
-          ButtonPrimary(
-            label: 'Sign Out',
+          Divider(indent: 16),
+          ListItem(
+            title: 'Settings',
+            subtitle: 'Preferences and account',
+            leadingIcon: 'settings',
+            trailingIcon: 'chevron_right',
+            action: sduiAction(type: 'navigate', url: '/settings'),
+          ),
+          Divider(indent: 16),
+          ListItem(
+            title: 'Sign out',
+            leadingIcon: 'logout',
             action: sduiAction(type: 'logout', url: '/login'),
           ),
         ],
