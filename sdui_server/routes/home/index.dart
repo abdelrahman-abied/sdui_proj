@@ -9,13 +9,13 @@ Response onRequest(RequestContext context) {
     children: [
       // Header — greets the signed-in user
       SDUIContainer(
-        backgroundColor: '#1a1a2e',
+        backgroundColor: '@primary',
         padding: 16,
         children: [
           SDUIText(
             text: 'Welcome, ${user.username}',
             style: 'title',
-            color: '#ffffff',
+            color: '@onPrimary',
           ),
         ],
       ),
@@ -66,7 +66,7 @@ Response onRequest(RequestContext context) {
         ],
       ),
       // Horizontal Scroll list
-      SDUIText(text: 'Featured', style: 'subtitle', color: '#333333'),
+      SDUIText(text: 'Featured', style: 'subtitle', color: '@onBackground'),
       HorizontalScroll(
         children: [
           for (var i = 1; i <= 5; i++)
@@ -74,10 +74,10 @@ Response onRequest(RequestContext context) {
               margin: 12,
               padding: 12,
               cornerRadius: 8,
-              backgroundColor: '#f0f0f0',
+              backgroundColor: '@surface',
               action: sduiAction(type: 'navigate', url: '/product/$i'),
               children: [
-                SDUIText(text: 'Item $i', color: '#000000'),
+                SDUIText(text: 'Item $i', color: '@onSurface'),
               ],
             ),
         ],

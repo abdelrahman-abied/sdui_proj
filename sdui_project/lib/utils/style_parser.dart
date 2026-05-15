@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../sdui/theme_registry.dart';
+
 /// Reads style fields out of an SDUI node's `props` map (which is what the
 /// server emits today). Keys are camelCase to match the server-side widgets in
 /// `sdui_builder.dart` (`padding`, `margin`, `backgroundColor`, `cornerRadius`).
@@ -8,13 +10,20 @@ import 'package:flutter/material.dart';
 /// snake_case `style` block for backwards compatibility with the legacy
 /// asset-driven JSON shape.
 class StyleParser {
-  /// Convert `"#1a1a2e"` (or `"#aarrggbb"`) into a [Color].
-  static Color? parseColor(String? hexString) {
-    if (hexString == null || hexString.isEmpty) return null;
+  /// Convert a server-supplied color string into a [Color].
+  ///
+  /// Accepts both raw hex (`#1a1a2e` or `#ff1a1a2e`) and theme tokens that
+  /// start with `@` (`@primary`, `@danger`). Tokens resolve against
+  /// [ThemeRegistry.current.colors]; unknown tokens fall back to null.
+  static Color? parseColor(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('@')) {
+      return ThemeRegistry.current.colors[raw.substring(1)];
+    }
     try {
       final buffer = StringBuffer();
-      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
-      buffer.write(hexString.replaceFirst('#', ''));
+      if (raw.length == 6 || raw.length == 7) buffer.write('ff');
+      buffer.write(raw.replaceFirst('#', ''));
       return Color(int.parse(buffer.toString(), radix: 16));
     } catch (_) {
       return null;

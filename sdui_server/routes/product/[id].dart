@@ -12,7 +12,7 @@ Response onRequest(RequestContext context, String id) {
           SDUIText(
             text: 'Product #$productId',
             style: 'title',
-            color: '#1a1a2e',
+            color: '@primary',
           ),
           SDUIImage(
             url: 'https://picsum.photos/400/300?seed=$productId',
@@ -21,7 +21,7 @@ Response onRequest(RequestContext context, String id) {
           SDUIText(
             text:
                 'Description for product $productId. Dynamic content from server.',
-            color: '#333333',
+            color: '@onBackground',
           ),
           ButtonPrimary(
             label: 'Add to Cart',

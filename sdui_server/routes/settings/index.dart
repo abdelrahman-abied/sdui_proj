@@ -6,13 +6,13 @@ Response onRequest(RequestContext context) {
   final page = sdui.VerticalStack(
     children: [
       sdui.SDUIContainer(
-        backgroundColor: '#1a1a2e',
+        backgroundColor: '@primary',
         padding: 16,
         children: [
           sdui.SDUIText(
             text: 'Settings',
             style: 'title',
-            color: '#ffffff',
+            color: '@onPrimary',
           ),
         ],
       ),

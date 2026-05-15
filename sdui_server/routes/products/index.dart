@@ -23,7 +23,7 @@ Response onRequest(RequestContext context) {
         SDUIContainer(
           margin: 8,
           padding: 16,
-          backgroundColor: '#ffffff',
+          backgroundColor: '@background',
           cornerRadius: 8,
           action: sduiAction(type: 'navigate', url: '/product/$i'),
           children: [
@@ -34,11 +34,11 @@ Response onRequest(RequestContext context) {
             SDUIText(
               text: 'Product $i',
               style: 'subtitle',
-              color: '#1a1a2e',
+              color: '@primary',
             ),
             SDUIText(
               text: '\$${(i * 9.99).toStringAsFixed(2)}',
-              color: '#666666',
+              color: '@muted',
             ),
           ],
         ),

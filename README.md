@@ -27,6 +27,7 @@ Routing, navigation targets, and even the app's entrypoint are decided by the se
 - **JSON action protocol** — `navigate`, `form_submit`, `show_toast`, `network_request`, `pop`, `logout`. Forms validate locally, POST to the server, and run whatever action the server returns next.
 - **Real auth & session** — `/auth/login` issues an HS256 JWT; the client persists it via `shared_preferences` and attaches `Authorization: Bearer …` on every request. Protected routes return a `401` carrying a `navigate /login` action.
 - **Schema versioning** — Client sends `X-SDUI-Version`; server echoes its version and emits `X-SDUI-Deprecated` for stale clients. Server widgets can ship `fallback_type` so older clients render a back-compat shape instead of an "Unknown Component" banner.
+- **Server-driven theming** — `GET /theme` returns brand tokens (colors, typography, radius). The client builds `ThemeData` from them at app start; component colors can be set with `@primary`, `@danger`, etc. and re-resolve any time the theme changes — change the brand without re-shipping the app.
 - **Real pagination** — `LAZY_LIST` emits `nextUrl`; the client fetches more on scroll and stops when the server omits it.
 - **Pull-to-refresh + cache** — Every screen has `RefreshIndicator`; pulling bypasses the in-memory cache.
 - **Configurable base URL** — Point at any backend with `--dart-define=SDUI_BASE_URL=...`; sensible defaults for Android emulator, iOS sim, desktop, and web.
@@ -300,6 +301,46 @@ class FuturisticCard extends SDUIWidget {
 ```
 
 If the client's `ComponentRegistry` has no `FUTURISTIC_CARD` builder, the parser uses `fallback_type` + `fallback_props` automatically and renders the older shape — no "Unknown Component" banner.
+
+---
+
+## Theming
+
+The server owns the app's brand. At startup the client calls `GET /theme` and builds a Flutter `ThemeData` from the response. `/theme` is public (no JWT required) so the splash can fetch it before login.
+
+Sample response from [routes/theme/index.dart](sdui_server/routes/theme/index.dart):
+
+```json
+{
+  "colors": {
+    "primary": "#1a1a2e",
+    "onPrimary": "#ffffff",
+    "danger": "#c62828",
+    "muted": "#666666"
+  },
+  "typography": { "title": 24, "subtitle": 18, "body": 14 },
+  "radius": { "card": 12, "button": 8, "input": 8 }
+}
+```
+
+### Token references in component JSON
+
+Any `color` / `backgroundColor` prop can be either a raw hex string or a token starting with `@`. Tokens resolve against the active theme via [`ThemeRegistry.current.colors`](sdui_project/lib/sdui/theme_registry.dart):
+
+```dart
+SDUIText(text: 'Welcome', color: '@onPrimary')   // resolved at render time
+SDUIText(text: 'Welcome', color: '#ffffff')      // still works
+```
+
+Unknown tokens (`@nope`) fall through to `null`, so widgets pick their default color.
+
+### Client bootstrap
+
+[main.dart](sdui_project/lib/main.dart) awaits `ThemeRegistry.bootstrap()` before `runApp`. If `/theme` is unreachable, [`SDUITheme.fallback`](sdui_project/lib/sdui/theme_registry.dart) supplies sensible defaults so the app still renders. `MaterialApp` rebuilds via a `ValueListenableBuilder` listening to `ThemeRegistry.notifier`, so a future feature can hot-swap the theme (e.g. dark mode, white-label tenant) without restarting.
+
+### Re-branding without a release
+
+Change the colors map in [routes/theme/index.dart](sdui_server/routes/theme/index.dart), redeploy the server, restart the app. Every screen that uses `@token` colors instantly reflects the new brand — no app-store submission.
 
 ---
 

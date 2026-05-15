@@ -11,7 +11,7 @@ Response onRequest(RequestContext context) {
           SDUIText(
             text: 'Welcome Back',
             style: 'title',
-            color: '#1a1a2e',
+            color: '@primary',
           ),
         ],
       ),

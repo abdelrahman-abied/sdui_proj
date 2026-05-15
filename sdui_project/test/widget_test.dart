@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sdui_project/sdui/component_registry.dart';
 import 'package:sdui_project/sdui/form_manager.dart';
 import 'package:sdui_project/sdui/sdui_parser.dart';
+import 'package:sdui_project/sdui/theme_registry.dart';
+import 'package:sdui_project/utils/style_parser.dart';
 
 Widget _wrap(Map<String, dynamic> json) => MaterialApp(
       home: Scaffold(body: SDUIParser(uiJson: json)),
@@ -228,6 +230,43 @@ void main() {
         },
       }));
       expect(SDUIFormManager().export()['language'], 'en');
+    });
+  });
+
+  group('theming', () {
+    setUp(() {
+      // Seed a known theme so the resolver is deterministic.
+      ThemeRegistry.current = const SDUITheme(
+        colors: {
+          'primary': Color(0xFF1A1A2E),
+          'danger': Color(0xFFC62828),
+        },
+        typography: {'title': 24, 'body': 14},
+        radius: {'button': 8},
+      );
+    });
+
+    test('@token resolves to the theme color', () {
+      expect(StyleParser.parseColor('@primary'), const Color(0xFF1A1A2E));
+      expect(StyleParser.parseColor('@danger'), const Color(0xFFC62828));
+    });
+
+    test('unknown @token returns null', () {
+      expect(StyleParser.parseColor('@nope'), isNull);
+    });
+
+    test('raw hex still works alongside tokens', () {
+      expect(StyleParser.parseColor('#1a1a2e'), const Color(0xFF1A1A2E));
+    });
+
+    test('SDUITheme.fromJson merges incoming colors over fallback', () {
+      final theme = SDUITheme.fromJson({
+        'colors': {'primary': '#abcdef'},
+      });
+      // Custom value wins…
+      expect(theme.colors['primary'], const Color(0xFFABCDEF));
+      // …but other fallback tokens are still available.
+      expect(theme.colors['danger'], SDUITheme.fallback.colors['danger']);
     });
   });
 

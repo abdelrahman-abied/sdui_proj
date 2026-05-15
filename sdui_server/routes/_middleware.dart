@@ -12,6 +12,7 @@ const _publicPathPrefixes = <String>{
   '/',
   '/login',
   '/auth/login',
+  '/theme',
 };
 
 /// Global middleware:

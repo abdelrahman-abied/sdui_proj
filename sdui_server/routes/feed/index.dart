@@ -18,15 +18,15 @@ Response onRequest(RequestContext context) {
         SDUIContainer(
           margin: 8,
           padding: 16,
-          backgroundColor: '#ffffff',
+          backgroundColor: '@background',
           cornerRadius: 8,
           children: [
             SDUIText(
               text: 'Feed Item $i',
               style: 'subtitle',
-              color: '#333333',
+              color: '@onBackground',
             ),
-            SDUIText(text: 'Content for item $i.', color: '#666666'),
+            SDUIText(text: 'Content for item $i.', color: '@muted'),
           ],
         ),
     ],
