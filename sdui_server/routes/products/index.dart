@@ -60,5 +60,35 @@ Response onRequest(RequestContext context) {
     ],
   );
 
-  return Response.json(body: products.toJson());
+  // Shape-matched skeleton: same card layout, blank tiles. The client renders
+  // this while the page is fetching on the *next* visit (cached responses
+  // carry the skeleton through to disk).
+  final skeleton = VerticalStack(
+    children: [
+      for (var i = 0; i < _pageSize; i++)
+        SDUIContainer(
+          margin: 8,
+          padding: 16,
+          backgroundColor: '@surface',
+          cornerRadius: 8,
+          children: [
+            SDUIContainer(
+              backgroundColor: '@muted',
+              cornerRadius: 8,
+              children: [SDUIImage(url: '', height: 160)],
+            ),
+            SDUIText(text: ' ', style: 'subtitle', color: '@muted'),
+            SDUIText(text: ' ', color: '@muted'),
+          ],
+        ),
+    ],
+  );
+
+  return Response.json(
+    body: sduiScreen(
+      title: 'Products',
+      tree: products,
+      loadingSkeleton: skeleton,
+    ),
+  );
 }

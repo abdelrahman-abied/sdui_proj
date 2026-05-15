@@ -836,4 +836,54 @@ void main() {
       expect(calls, 2);
     });
   });
+
+  group('Phase 7 — loading skeleton', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.debugResetHydration();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('peekSkeleton returns null when no cached entry exists', () async {
+      expect(await SDUIApiService.peekSkeleton('/never-fetched'), isNull);
+    });
+
+    test('peekSkeleton returns the loading_skeleton attached to a cached body', () async {
+      final body = jsonEncode({
+        'ui_tree': {'type': 'TEXT', 'props': {'text': 'real'}},
+        'loading_skeleton': {'type': 'TEXT', 'props': {'text': 'skeleton-placeholder'}},
+      });
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        return http.Response(body, 200, headers: {'etag': '"s"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      final tree = await SDUIApiService.peekSkeleton('/probe');
+      expect(tree, isNotNull);
+      expect(tree!['type'], 'TEXT');
+      expect(tree['props']['text'], 'skeleton-placeholder');
+    });
+
+    test('cold-start hydration restores the skeleton from disk', () async {
+      final body = jsonEncode({
+        'ui_tree': {'type': 'TEXT', 'props': {'text': 'real'}},
+        'loading_skeleton': {'type': 'TEXT', 'props': {'text': 'persisted-skel'}},
+      });
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        return http.Response(body, 200, headers: {'etag': '"s"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      // Wait for the unawaited disk write to complete.
+      await Future<void>.delayed(Duration.zero);
+
+      // Simulate cold start — drop in-memory state but keep prefs.
+      SDUIApiService.debugResetHydration();
+      final tree = await SDUIApiService.peekSkeleton('/probe');
+      expect(tree?['props']['text'], 'persisted-skel');
+    });
+  });
 }

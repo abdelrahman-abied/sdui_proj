@@ -294,6 +294,24 @@ class EmptyState extends SDUIWidget {
         );
 }
 
+/// Wraps a primary UI tree with optional screen-level metadata. The client
+/// page loader already accepts a `ui_tree` key as the renderable root; this
+/// helper also lets the server attach a `loading_skeleton` tree the client
+/// can render on the *next* navigation to this screen, instead of the
+/// generic spinner. Cold start (no cached response) still falls back to the
+/// spinner — the skeleton requires a previous response to draw from.
+Map<String, dynamic> sduiScreen({
+  required SDUIWidget tree,
+  SDUIWidget? loadingSkeleton,
+  String? title,
+}) {
+  return {
+    if (title != null) 'screen_title': title,
+    'ui_tree': tree.toJson(),
+    if (loadingSkeleton != null) 'loading_skeleton': loadingSkeleton.toJson(),
+  };
+}
+
 /// Material ListTile-style row with optional leading/trailing icons.
 class ListItem extends SDUIWidget {
   ListItem({

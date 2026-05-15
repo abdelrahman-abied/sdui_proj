@@ -30,12 +30,22 @@ class SDUIGenericPage extends StatefulWidget {
 class _SDUIGenericPageState extends State<SDUIGenericPage> {
   bool isLoading = true;
   Map<String, dynamic>? uiData;
+  Map<String, dynamic>? skeleton;
   String? errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _peekSkeleton();
     _fetchPage();
+  }
+
+  Future<void> _peekSkeleton() async {
+    final tree = await SDUIApiService.peekSkeleton(widget.endpoint);
+    // The fetch may already have completed; only swap in the skeleton if
+    // we're still in the loading state, otherwise it'd flash over the body.
+    if (!mounted || !isLoading || tree == null) return;
+    setState(() => skeleton = tree);
   }
 
   Future<void> _fetchPage({bool useCache = true}) async {
@@ -79,6 +89,16 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
+      // Shape-matched skeleton from the previous response, if we have one.
+      // Cold start (or endpoints the server hasn't shipped a skeleton for)
+      // still falls back to the generic spinner.
+      if (skeleton != null) {
+        return Scaffold(
+          body: SafeArea(
+            child: SingleChildScrollView(child: SDUIParser(uiJson: skeleton!)),
+          ),
+        );
+      }
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -203,6 +223,21 @@ class SDUIApiService {
       // had and we haven't already populated from a live fetch.
       stored.forEach((k, v) => _cache.putIfAbsent(k, () => v));
     }();
+  }
+
+  /// Returns the `loading_skeleton` ui_tree the server attached to a previous
+  /// response for [endpoint], or null if there's no cached entry yet (cold
+  /// start with no disk state). The page loader renders this in place of the
+  /// generic spinner while a fetch is in flight, so navigation reveals a
+  /// page-shaped placeholder instead of an empty progress widget.
+  static Future<Map<String, dynamic>?> peekSkeleton(String endpoint) async {
+    await _ensureHydrated();
+    final uri = _resolve(endpoint);
+    final cacheKey = uri.path + (uri.hasQuery ? '?${uri.query}' : '');
+    final cached = _cache[cacheKey];
+    final tree = cached?.data['loading_skeleton'];
+    if (tree is Map) return Map<String, dynamic>.from(tree);
+    return null;
   }
 
   static Future<Map<String, dynamic>> fetchEndpoint(
