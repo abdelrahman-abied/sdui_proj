@@ -77,6 +77,27 @@ void main() {
       expect(a.headers['etag'], isNot(b.headers['etag']));
     });
 
+    test('200 GET gets a default Cache-Control: max-age=N header', () async {
+      final ctx = _ctxFor(path: '/theme');
+      final handler = mw.middleware(
+        (_) => Response.json(body: {'colors': {'primary': '#111'}}),
+      );
+      final response = await handler(ctx);
+      expect(response.headers['cache-control'], matches(RegExp(r'^max-age=\d+$')));
+    });
+
+    test('route-set Cache-Control overrides the middleware default', () async {
+      final ctx = _ctxFor(path: '/theme');
+      final handler = mw.middleware(
+        (_) => Response.json(
+          body: {'k': 'v'},
+          headers: {'cache-control': 'no-store'},
+        ),
+      );
+      final response = await handler(ctx);
+      expect(response.headers['cache-control'], 'no-store');
+    });
+
     test('etag is stable for identical bodies', () async {
       Future<String> etagOf(Map<String, dynamic> body) async {
         final ctx = _ctxFor(path: '/theme');

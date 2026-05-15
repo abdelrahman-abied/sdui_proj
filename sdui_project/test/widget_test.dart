@@ -460,6 +460,163 @@ void main() {
     });
   });
 
+  group('Phase 6 — stale-while-revalidate', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.debugResetHydration();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('returns cached body immediately, then calls onRevalidate with fresh body', () async {
+      final stale = jsonEncode({'type': 'TEXT', 'props': {'text': 'old'}});
+      final fresh = jsonEncode({'type': 'TEXT', 'props': {'text': 'new'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response(stale, 200, headers: {'etag': '"v1"'});
+        }
+        // Background revalidation sees a new ETag and a different body.
+        expect(req.headers['if-none-match'], '"v1"');
+        return http.Response(fresh, 200, headers: {'etag': '"v2"'});
+      }));
+
+      // Warm the cache.
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 1);
+
+      // Second call with onRevalidate: returns cached synchronously and
+      // dispatches a background refetch.
+      Map<String, dynamic>? freshFromCallback;
+      final returned = await SDUIApiService.fetchEndpoint(
+        '/probe',
+        onRevalidate: (v) => freshFromCallback = v,
+      );
+      expect(returned['props']['text'], 'old',
+          reason: 'cached value should be returned synchronously');
+
+      // Let the background fetch settle.
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+      expect(freshFromCallback, isNotNull);
+      expect(freshFromCallback!['props']['text'], 'new');
+    });
+
+    test('skips onRevalidate when the server responds 304', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'same'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response(body, 200, headers: {'etag': '"v1"'});
+        }
+        return http.Response('', 304, headers: {'etag': '"v1"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+
+      var fired = false;
+      await SDUIApiService.fetchEndpoint(
+        '/probe',
+        onRevalidate: (_) => fired = true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 2);
+      expect(fired, isFalse, reason: '304 means cached body is still current');
+    });
+
+    test('background fetch errors do not surface to the caller', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'cached'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response(body, 200, headers: {'etag': '"e"'});
+        }
+        throw Exception('network down');
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+
+      // The synchronous return must complete normally even if the
+      // background revalidation throws.
+      final cached = await SDUIApiService.fetchEndpoint(
+        '/probe',
+        onRevalidate: (_) {},
+      );
+      expect(cached['props']['text'], 'cached');
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+    });
+  });
+
+  group('Phase 6 — server-driven TTL', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.debugResetHydration();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('fresh entry (within max-age) returns from cache without network', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'fresh'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        return http.Response(body, 200, headers: {
+          'etag': '"e"',
+          'cache-control': 'max-age=300',
+        });
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 1, reason: 'second call is within max-age, must hit cache');
+    });
+
+    test('expired entry forces a foreground revalidation with If-None-Match', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'aged'}});
+      var calls = 0;
+      String? lastIfNoneMatch;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        lastIfNoneMatch = req.headers['if-none-match'];
+        // max-age=0 means every subsequent read is past expiry.
+        return http.Response(body, 200, headers: {
+          'etag': '"v1"',
+          'cache-control': 'max-age=0',
+        });
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      // Even though useCache: true, the stored entry is already expired.
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 2);
+      expect(lastIfNoneMatch, '"v1"',
+          reason: 'expired path must still try the 304 shortcut');
+    });
+
+    test('no Cache-Control header keeps the legacy "never expires" semantics', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'no-ttl'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        return http.Response(body, 200, headers: {'etag': '"e"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 1,
+          reason: 'absent Cache-Control means no expiry hint — cache stays warm');
+    });
+  });
+
   group('Phase 6 — persistent disk cache', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});

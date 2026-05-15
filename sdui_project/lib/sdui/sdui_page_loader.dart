@@ -43,6 +43,16 @@ class _SDUIGenericPageState extends State<SDUIGenericPage> {
       final json = await SDUIApiService.fetchEndpoint(
         widget.endpoint,
         useCache: useCache,
+        // Stale-while-revalidate: when we serve a cached body, fire a quiet
+        // background revalidation and swap to the fresh tree if the server
+        // returns a different ETag. Skipped on pull-to-refresh (the user
+        // already asked for fresh, and the foreground fetch is fresh).
+        onRevalidate: useCache
+            ? (fresh) {
+                if (!mounted) return;
+                setState(() => uiData = fresh);
+              }
+            : null,
       );
       if (!mounted) return;
       setState(() {
@@ -198,6 +208,7 @@ class SDUIApiService {
   static Future<Map<String, dynamic>> fetchEndpoint(
     String endpoint, {
     bool useCache = true,
+    void Function(Map<String, dynamic> fresh)? onRevalidate,
   }) async {
     final uri = _resolve(endpoint);
     final cacheKey = uri.path + (uri.hasQuery ? '?${uri.query}' : '');
@@ -207,8 +218,15 @@ class SDUIApiService {
     await _ensureHydrated();
     final cached = _cache[cacheKey];
 
-    // Fast path: instant hit from memory on navigation.
-    if (useCache && cached != null) {
+    // Fast path: instant hit from memory on navigation. When the caller
+    // wants stale-while-revalidate, kick off a quiet background fetch and
+    // notify them if the server has fresher data. Expired entries (past
+    // their server-sent max-age) fall through to the foreground refetch
+    // below so we never return data the server told us is stale.
+    if (useCache && cached != null && !cached.isExpired()) {
+      if (onRevalidate != null) {
+        unawaited(_revalidate(uri, cacheKey, cached, onRevalidate));
+      }
       return Map<String, dynamic>.from(cached.data);
     }
 
@@ -225,13 +243,65 @@ class SDUIApiService {
     }
 
     final data = await _decode(response, uri);
-    _cache[cacheKey] = CachedResponse(
-      data: data,
-      etag: response.headers['etag'],
-    );
+    _cache[cacheKey] = _buildCacheEntry(data, response);
     // Persist asynchronously — the fetch result is what the caller needs.
     unawaited(CacheStore.save(_cache));
     return data;
+  }
+
+  /// Builds a fresh cache entry from a 200 response, capturing the ETag and
+  /// the server's `Cache-Control: max-age=N` so future reads can detect TTL
+  /// expiry and force a foreground revalidation.
+  static CachedResponse _buildCacheEntry(
+    Map<String, dynamic> data,
+    http.Response response,
+  ) {
+    return CachedResponse(
+      data: data,
+      etag: response.headers['etag'],
+      storedAt: DateTime.now().millisecondsSinceEpoch,
+      maxAgeSeconds: _parseMaxAge(response.headers['cache-control']),
+    );
+  }
+
+  /// Pulls `max-age=N` out of a `Cache-Control` header. Returns null when no
+  /// directive is present so callers can distinguish "no expiry hint" from
+  /// "expires immediately".
+  static int? _parseMaxAge(String? header) {
+    if (header == null || header.isEmpty) return null;
+    for (final part in header.split(',')) {
+      final trimmed = part.trim().toLowerCase();
+      if (trimmed.startsWith('max-age=')) {
+        return int.tryParse(trimmed.substring('max-age='.length));
+      }
+    }
+    return null;
+  }
+
+  /// Background revalidation for stale-while-revalidate. Sends If-None-Match;
+  /// on 304 we leave the cache alone. On 200 we update memory + disk and call
+  /// [onFresh] so the UI can swap to the new tree. Failures are swallowed —
+  /// the caller already got the cached body, so a network blip is harmless.
+  static Future<void> _revalidate(
+    Uri uri,
+    String cacheKey,
+    CachedResponse cached,
+    void Function(Map<String, dynamic> fresh) onFresh,
+  ) async {
+    try {
+      final headers = await _headers();
+      if (cached.etag != null) {
+        headers['if-none-match'] = cached.etag!;
+      }
+      final response = await _client.get(uri, headers: headers);
+      if (response.statusCode == 304) return;
+      final data = await _decode(response, uri);
+      _cache[cacheKey] = _buildCacheEntry(data, response);
+      unawaited(CacheStore.save(_cache));
+      onFresh(Map<String, dynamic>.from(data));
+    } catch (_) {
+      // SWR is best-effort. The cached body is already in the caller's hands.
+    }
   }
 
   /// POSTs a JSON body and returns the JSON response. Used by form submits.

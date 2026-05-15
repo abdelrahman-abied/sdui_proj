@@ -10,6 +10,11 @@ import 'package:sdui_server/sdui_actions.dart';
 const int _serverSduiVersion = 1;
 const int _minSupportedClientVersion = 1;
 
+/// Default `Cache-Control: max-age=N` for cacheable 200 GETs. The client
+/// treats entries older than this as cold and forces a revalidation. Routes
+/// can override by setting their own `cache-control` header.
+const int _defaultMaxAgeSeconds = 60;
+
 /// Routes the client can reach without a JWT.
 const _publicPathPrefixes = <String>{
   '/',
@@ -61,16 +66,29 @@ Handler middleware(Handler handler) {
       final body = await response.body();
       final hash = sha256.convert(utf8.encode(body)).toString();
       final etag = '"${hash.substring(0, 16)}"';
+      // Route handlers can pin their own Cache-Control (e.g. `no-store` for
+      // auth-gated screens); the default applies only when they don't.
+      final cacheControl = response.headers['cache-control'] ??
+          'max-age=$_defaultMaxAgeSeconds';
       final ifNoneMatch = context.request.headers['if-none-match'];
       if (ifNoneMatch == etag) {
         return Response(
           statusCode: 304,
-          headers: {...extraHeaders, 'etag': etag},
+          headers: {
+            ...extraHeaders,
+            'etag': etag,
+            'cache-control': cacheControl,
+          },
         );
       }
       return Response(
         body: body,
-        headers: {...response.headers, ...extraHeaders, 'etag': etag},
+        headers: {
+          ...response.headers,
+          ...extraHeaders,
+          'etag': etag,
+          'cache-control': cacheControl,
+        },
       );
     }
 

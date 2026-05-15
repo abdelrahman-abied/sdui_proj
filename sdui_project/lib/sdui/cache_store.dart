@@ -3,12 +3,35 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// One cached SDUI response that survives an app restart.
+///
+/// [storedAt] + [maxAgeSeconds] together implement server-driven TTL — the
+/// server's `Cache-Control: max-age=N` tells the client how long the body is
+/// trusted before a foreground revalidation is required. A null [maxAgeSeconds]
+/// means "no expiry hint" and the entry stays fresh until evicted.
 class CachedResponse {
-  CachedResponse({required this.data, this.etag});
+  CachedResponse({
+    required this.data,
+    this.etag,
+    this.storedAt,
+    this.maxAgeSeconds,
+  });
   final Map<String, dynamic> data;
   final String? etag;
+  final int? storedAt;
+  final int? maxAgeSeconds;
 
-  Map<String, dynamic> _toJson() => {'data': data, if (etag != null) 'etag': etag};
+  bool isExpired({DateTime? now}) {
+    if (storedAt == null || maxAgeSeconds == null) return false;
+    final current = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    return current - storedAt! > maxAgeSeconds! * 1000;
+  }
+
+  Map<String, dynamic> _toJson() => {
+        'data': data,
+        if (etag != null) 'etag': etag,
+        if (storedAt != null) 'storedAt': storedAt,
+        if (maxAgeSeconds != null) 'maxAge': maxAgeSeconds,
+      };
 
   static CachedResponse? _tryFromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -17,6 +40,8 @@ class CachedResponse {
     return CachedResponse(
       data: Map<String, dynamic>.from(data),
       etag: raw['etag'] as String?,
+      storedAt: raw['storedAt'] as int?,
+      maxAgeSeconds: raw['maxAge'] as int?,
     );
   }
 }
