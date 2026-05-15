@@ -409,7 +409,7 @@ void main() {
   group('Phase 6 — ETag / 304 caching', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
-      SDUIApiService.clearCache();
+      SDUIApiService.debugResetHydration();
     });
 
     tearDown(() {
@@ -457,6 +457,93 @@ void main() {
       await SDUIApiService.fetchEndpoint('/probe');
       await SDUIApiService.fetchEndpoint('/probe');
       expect(calls, 1, reason: 'second call should be served from cache');
+    });
+  });
+
+  group('Phase 6 — persistent disk cache', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.debugResetHydration();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('write seeds disk so the next cold start hydrates without a network call', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'persisted'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        return http.Response(body, 200, headers: {'etag': '"persisted-tag"'});
+      }));
+
+      // First "session" — populate the cache.
+      await SDUIApiService.fetchEndpoint('/probe');
+      // Let the unawaited CacheStore.save complete.
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 1);
+
+      // Simulate a cold start: wipe in-memory state but keep the prefs blob.
+      SDUIApiService.debugResetHydration();
+
+      final hydrated = await SDUIApiService.fetchEndpoint('/probe');
+      expect(hydrated['props']['text'], 'persisted');
+      expect(calls, 1, reason: 'hydrated value should serve from disk, not hit the network');
+    });
+
+    test('after cold-start hydration, refresh sends the persisted ETag', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'p2'}});
+      var calls = 0;
+      String? lastIfNoneMatch;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        lastIfNoneMatch = req.headers['if-none-match'];
+        // Always respond 304 — the cached body should keep being returned.
+        if (calls == 1) {
+          return http.Response(body, 200, headers: {'etag': '"e1"'});
+        }
+        return http.Response('', 304, headers: {'etag': '"e1"'});
+      }));
+
+      // Session 1: warm the disk cache.
+      await SDUIApiService.fetchEndpoint('/probe');
+      await Future<void>.delayed(Duration.zero);
+
+      // Cold start.
+      SDUIApiService.debugResetHydration();
+
+      // First call after cold start: served from disk, no network.
+      final cached = await SDUIApiService.fetchEndpoint('/probe');
+      expect(cached['props']['text'], 'p2');
+      expect(calls, 1);
+
+      // Refresh: we should now send If-None-Match with the persisted etag,
+      // get a 304 back, and return the same body.
+      final refreshed = await SDUIApiService.fetchEndpoint('/probe', useCache: false);
+      expect(refreshed['props']['text'], 'p2');
+      expect(calls, 2);
+      expect(lastIfNoneMatch, '"e1"');
+    });
+
+    test('clearCache wipes the disk blob so future cold starts start empty', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'gone'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        return http.Response(body, 200, headers: {'etag': '"e"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      await Future<void>.delayed(Duration.zero);
+      SDUIApiService.clearCache();
+      // Give the fire-and-forget CacheStore.clear a tick to finish.
+      await Future<void>.delayed(Duration.zero);
+      SDUIApiService.debugResetHydration();
+
+      // Cold start with no disk state: forced to hit the network.
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 2);
     });
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'action_delegate.dart';
+import 'cache_store.dart';
 import 'sdui_action.dart';
 import 'sdui_parser.dart';
 import 'session_store.dart';
@@ -145,7 +147,16 @@ class SDUIApiService {
   /// We keep the parsed body alongside the server's `ETag`. On a refresh
   /// (`useCache: false`) we re-send the ETag as `If-None-Match`; a `304`
   /// then serves the cached body without re-parsing.
-  static final Map<String, _CachedEntry> _cache = {};
+  ///
+  /// Mirrored to disk via [CacheStore] — a cold start hydrates this map
+  /// before the first network call, so a repeat user sees their last UI
+  /// instantly and we revalidate in the background with `If-None-Match`.
+  static final Map<String, CachedResponse> _cache = {};
+
+  /// Becomes a non-null `Future` the first time we kick off disk hydration.
+  /// Subsequent fetches await the same future, so concurrent cold-start
+  /// requests don't race on the prefs read.
+  static Future<void>? _hydration;
 
   /// HTTP client used for all requests. Overridable by tests via
   /// [debugSetClient] so we can mock 304s and verify If-None-Match without
@@ -155,12 +166,34 @@ class SDUIApiService {
   @visibleForTesting
   static void debugSetClient(http.Client client) => _client = client;
 
+  /// Wipes the in-memory mirror only — used by tests between cases.
+  @visibleForTesting
+  static void debugResetHydration() {
+    _cache.clear();
+    _hydration = null;
+  }
+
   /// Server-emitted deprecation notice (X-SDUI-Deprecated). UI can listen to
   /// this and show a banner. Set the first time we observe the header in a
   /// response; left in place until the app restarts.
   static final ValueNotifier<String?> deprecationNotice = ValueNotifier(null);
 
-  static void clearCache() => _cache.clear();
+  /// Drops both the in-memory and disk caches. Called on logout/401 so
+  /// auth-gated screens don't survive into the next session.
+  static void clearCache() {
+    _cache.clear();
+    // Fire-and-forget — the disk write doesn't need to block the caller.
+    CacheStore.clear();
+  }
+
+  static Future<void> _ensureHydrated() {
+    return _hydration ??= () async {
+      final stored = await CacheStore.load();
+      // The in-memory map is the source of truth — only fill the keys disk
+      // had and we haven't already populated from a live fetch.
+      stored.forEach((k, v) => _cache.putIfAbsent(k, () => v));
+    }();
+  }
 
   static Future<Map<String, dynamic>> fetchEndpoint(
     String endpoint, {
@@ -168,6 +201,10 @@ class SDUIApiService {
   }) async {
     final uri = _resolve(endpoint);
     final cacheKey = uri.path + (uri.hasQuery ? '?${uri.query}' : '');
+
+    // Cold start: drain prefs into the in-memory cache once. After this
+    // returns, repeat callers hit the fast path below without disk I/O.
+    await _ensureHydrated();
     final cached = _cache[cacheKey];
 
     // Fast path: instant hit from memory on navigation.
@@ -188,7 +225,12 @@ class SDUIApiService {
     }
 
     final data = await _decode(response, uri);
-    _cache[cacheKey] = _CachedEntry(data, response.headers['etag']);
+    _cache[cacheKey] = CachedResponse(
+      data: data,
+      etag: response.headers['etag'],
+    );
+    // Persist asynchronously — the fetch result is what the caller needs.
+    unawaited(CacheStore.save(_cache));
     return data;
   }
 
@@ -262,8 +304,3 @@ class SDUIApiService {
   }
 }
 
-class _CachedEntry {
-  _CachedEntry(this.data, this.etag);
-  final Map<String, dynamic> data;
-  final String? etag;
-}
