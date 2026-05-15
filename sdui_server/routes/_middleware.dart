@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:sdui_server/auth.dart';
 import 'package:sdui_server/sdui_actions.dart';
@@ -51,12 +54,28 @@ Handler middleware(Handler handler) {
     final inner = context.provide<AuthUser>(() => authed);
 
     final response = await handler(inner);
+    final extraHeaders = {..._corsHeaders, ..._versionHeaders(context)};
+
+    // ETag / 304 — only for cacheable GETs with a 200 body.
+    if (method == HttpMethod.get && response.statusCode == 200) {
+      final body = await response.body();
+      final hash = sha256.convert(utf8.encode(body)).toString();
+      final etag = '"${hash.substring(0, 16)}"';
+      final ifNoneMatch = context.request.headers['if-none-match'];
+      if (ifNoneMatch == etag) {
+        return Response(
+          statusCode: 304,
+          headers: {...extraHeaders, 'etag': etag},
+        );
+      }
+      return Response(
+        body: body,
+        headers: {...response.headers, ...extraHeaders, 'etag': etag},
+      );
+    }
+
     return response.copyWith(
-      headers: {
-        ...response.headers,
-        ..._corsHeaders,
-        ..._versionHeaders(context),
-      },
+      headers: {...response.headers, ...extraHeaders},
     );
   };
 }
@@ -89,7 +108,8 @@ Map<String, String> _versionHeaders(RequestContext context) {
 const _corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'access-control-allow-headers': 'content-type, authorization, x-sdui-version',
-  'access-control-expose-headers': 'x-sdui-version, x-sdui-deprecated',
+  'access-control-allow-headers':
+      'content-type, authorization, x-sdui-version, if-none-match',
+  'access-control-expose-headers': 'x-sdui-version, x-sdui-deprecated, etag',
   'access-control-max-age': '86400',
 };

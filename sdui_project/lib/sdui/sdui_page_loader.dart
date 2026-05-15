@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -141,7 +141,19 @@ class SDUIApiService {
   }
 
   /// In-memory cache for GET responses. Cleared on logout/401.
-  static final Map<String, Map<String, dynamic>> _cache = {};
+  ///
+  /// We keep the parsed body alongside the server's `ETag`. On a refresh
+  /// (`useCache: false`) we re-send the ETag as `If-None-Match`; a `304`
+  /// then serves the cached body without re-parsing.
+  static final Map<String, _CachedEntry> _cache = {};
+
+  /// HTTP client used for all requests. Overridable by tests via
+  /// [debugSetClient] so we can mock 304s and verify If-None-Match without
+  /// real network.
+  static http.Client _client = http.Client();
+
+  @visibleForTesting
+  static void debugSetClient(http.Client client) => _client = client;
 
   /// Server-emitted deprecation notice (X-SDUI-Deprecated). UI can listen to
   /// this and show a banner. Set the first time we observe the header in a
@@ -156,14 +168,27 @@ class SDUIApiService {
   }) async {
     final uri = _resolve(endpoint);
     final cacheKey = uri.path + (uri.hasQuery ? '?${uri.query}' : '');
+    final cached = _cache[cacheKey];
 
-    if (useCache && _cache.containsKey(cacheKey)) {
-      return Map<String, dynamic>.from(_cache[cacheKey]!);
+    // Fast path: instant hit from memory on navigation.
+    if (useCache && cached != null) {
+      return Map<String, dynamic>.from(cached.data);
     }
 
-    final response = await http.get(uri, headers: await _headers());
+    // Refresh path (or cold). Send If-None-Match if we have an ETag so the
+    // server can answer 304 and we keep the existing parsed body.
+    final headers = await _headers();
+    if (cached?.etag != null) {
+      headers['if-none-match'] = cached!.etag!;
+    }
+
+    final response = await _client.get(uri, headers: headers);
+    if (response.statusCode == 304 && cached != null) {
+      return Map<String, dynamic>.from(cached.data);
+    }
+
     final data = await _decode(response, uri);
-    if (useCache) _cache[cacheKey] = data;
+    _cache[cacheKey] = _CachedEntry(data, response.headers['etag']);
     return data;
   }
 
@@ -173,7 +198,7 @@ class SDUIApiService {
     Map<String, dynamic> body,
   ) async {
     final uri = _resolve(endpoint);
-    final response = await http.post(
+    final response = await _client.post(
       uri,
       headers: await _headers(),
       body: jsonEncode(body),
@@ -235,4 +260,10 @@ class SDUIApiService {
     } catch (_) {}
     return null;
   }
+}
+
+class _CachedEntry {
+  _CachedEntry(this.data, this.etag);
+  final Map<String, dynamic> data;
+  final String? etag;
 }

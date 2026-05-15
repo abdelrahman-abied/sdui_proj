@@ -5,13 +5,19 @@
 // (e.g. moves `id` out of `props`), one of these tests fails — which is
 // what we want, because the rendered UI would silently break otherwise.
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:sdui_project/sdui/action_delegate.dart';
 import 'package:sdui_project/sdui/component_registry.dart';
 import 'package:sdui_project/sdui/form_manager.dart';
 import 'package:sdui_project/sdui/sdui_action.dart';
+import 'package:sdui_project/sdui/sdui_page_loader.dart';
 import 'package:sdui_project/sdui/sdui_parser.dart';
 import 'package:sdui_project/sdui/theme_registry.dart';
 import 'package:sdui_project/utils/style_parser.dart';
@@ -397,6 +403,60 @@ void main() {
       await tester.tap(find.text('Go'));
       await tester.pumpAndSettle();
       expect(order, ['start', 'end']);
+    });
+  });
+
+  group('Phase 6 — ETag / 304 caching', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SDUIApiService.clearCache();
+    });
+
+    tearDown(() {
+      SDUIApiService.debugSetClient(http.Client());
+    });
+
+    test('first fetch stores the ETag, refresh sends If-None-Match and a 304 returns cached body', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'hi'}});
+      const etag = '"abc123def456abcd"';
+      final requests = <http.Request>[];
+
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        requests.add(req);
+        if (requests.length == 1) {
+          return http.Response(body, 200, headers: {
+            'content-type': 'application/json',
+            'etag': etag,
+          });
+        }
+        // Second call: client should send If-None-Match; server replies 304.
+        expect(req.headers['if-none-match'], etag);
+        return http.Response('', 304, headers: {'etag': etag});
+      }));
+
+      final first = await SDUIApiService.fetchEndpoint('/probe');
+      expect(first['type'], 'TEXT');
+      expect(requests, hasLength(1));
+      // First request has no If-None-Match — nothing cached yet.
+      expect(requests.first.headers.containsKey('if-none-match'), isFalse);
+
+      // Refresh: cache is bypassed for the read, but we still re-use the ETag.
+      final second = await SDUIApiService.fetchEndpoint('/probe', useCache: false);
+      expect(second['type'], 'TEXT');
+      expect(requests, hasLength(2));
+    });
+
+    test('useCache: true returns the in-memory body without hitting the network', () async {
+      final body = jsonEncode({'type': 'TEXT', 'props': {'text': 'cached'}});
+      var calls = 0;
+      SDUIApiService.debugSetClient(MockClient((req) async {
+        calls++;
+        return http.Response(body, 200, headers: {'etag': '"x"'});
+      }));
+
+      await SDUIApiService.fetchEndpoint('/probe');
+      await SDUIApiService.fetchEndpoint('/probe');
+      expect(calls, 1, reason: 'second call should be served from cache');
     });
   });
 }
